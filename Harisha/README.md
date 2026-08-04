@@ -1,58 +1,88 @@
+# Website Monitoring Lambda Project
 
-# Welcome to your CDK Python project!
+## Overview
 
-This is a blank project for CDK development with Python.
+This project uses AWS CDK (Cloud Development Kit) to deploy a serverless website monitoring application.
 
-The `cdk.json` file tells the CDK Toolkit how to execute your app.
+An AWS Lambda function is triggered every 30 minutes using Amazon EventBridge. The Lambda function checks a web resource and records the website status, HTTP response code, and response time.
 
-This project is set up like a standard Python project.  The initialization
-process also creates a virtualenv within this project, stored under the `.venv`
-directory.  To create the virtualenv it assumes that there is a `python3`
-(or `python` for Windows) executable in your path with access to the `venv`
-package. If for any reason the automatic creation of the virtualenv fails,
-you can create the virtualenv manually.
+## AWS Services Used
 
-To manually create a virtualenv on MacOS and Linux:
+- AWS Lambda
+- Amazon EventBridge
+- AWS CloudFormation
+- AWS IAM
 
-```
-$ python3 -m venv .venv
-```
+## Functionality
 
-After the init process completes and the virtualenv is created, you can use the following
-step to activate your virtualenv.
+The Lambda function monitors:
 
-```
-$ source .venv/bin/activate
-```
+- Website URL
+- HTTP status code
+- Response time
+- Website availability status
 
-If you are a Windows platform, you would activate the virtualenv like this:
+Example output:
 
-```
-% .venv\Scripts\activate.bat
-```
-
-Once the virtualenv is activated, you can install the required dependencies.
-
-```
-$ pip install -r requirements.txt
+```json
+{
+  "website": "https://www.westernsydney.edu.au/",
+  "status_code": 200,
+  "response_time": 0.421,
+  "status": "UP"
+}
 ```
 
-At this point you can now synthesize the CloudFormation template for this code.
+## Infrastructure
 
+The project is deployed using AWS CDK Infrastructure as Code (IaC).
+
+Components created:
+
+- Lambda function for website monitoring
+- EventBridge scheduled rule (runs every 30 minutes)
+- IAM role for Lambda permissions
+
+## Deployment
+
+Activate virtual environment:
+
+```bash
+source .venv/bin/activate
 ```
-$ cdk synth
+
+Install dependencies:
+
+```bash
+pip install -r requirements.txt
 ```
 
-To add additional dependencies, for example other CDK libraries, just add
-them to your `requirements.txt` file and rerun the `python -m pip install -r requirements.txt`
-command.
+Synthesize CloudFormation template:
 
-## Useful commands
+```bash
+cdk synth
+```
 
- * `cdk ls`          list all stacks in the app
- * `cdk synth`       emits the synthesized CloudFormation template
- * `cdk deploy`      deploy this stack to your default AWS account/region
- * `cdk diff`        compare deployed stack with current state
- * `cdk docs`        open CDK documentation
+Deploy AWS resources:
 
-Enjoy!
+```bash
+cdk deploy
+```
+
+Destroy AWS resources after completing work:
+
+```bash
+cdk destroy
+```
+
+## Git Version Control
+
+The project source code is managed using GitHub.
+
+Changes can be committed using:
+
+```bash
+git add .
+git commit -m "Update website monitoring project"
+git push
+```
