@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 import os
 
-import aws_cdk as cdk
+import aws_cdk as cdk # type: ignore
 
 from harisha.harisha_stack import HarishaStack
 
