@@ -3,6 +3,7 @@ import json
 import time
 import boto3
 
+
 cloudwatch = boto3.client("cloudwatch")
 
 
@@ -18,10 +19,16 @@ def lambda_handler(event, context):
         start_time = time.time()
 
         try:
-            response = urllib.request.urlopen(url, timeout=10)
-            end_time = time.time()
 
-            response_time = round(end_time - start_time, 3)
+            response = urllib.request.urlopen(
+                url,
+                timeout=10
+            )
+
+            response_time = round(
+                time.time() - start_time,
+                3
+            )
 
             results.append({
                 "website": url,
@@ -30,7 +37,6 @@ def lambda_handler(event, context):
                 "status": "UP"
             })
 
-            # Publish availability metric
             cloudwatch.put_metric_data(
                 Namespace="WebHealth",
                 MetricData=[
@@ -44,14 +50,7 @@ def lambda_handler(event, context):
                         ],
                         "Value": 1,
                         "Unit": "Count"
-                    }
-                ]
-            )
-
-            # Publish latency metric
-            cloudwatch.put_metric_data(
-                Namespace="WebHealth",
-                MetricData=[
+                    },
                     {
                         "MetricName": "Latency",
                         "Dimensions": [
@@ -68,13 +67,18 @@ def lambda_handler(event, context):
 
         except Exception as e:
 
+            response_time = round(
+                time.time() - start_time,
+                3
+            )
+
             results.append({
                 "website": url,
                 "status": "DOWN",
+                "response_time": response_time,
                 "error": str(e)
             })
 
-            # Publish unavailable metric
             cloudwatch.put_metric_data(
                 Namespace="WebHealth",
                 MetricData=[
@@ -88,10 +92,22 @@ def lambda_handler(event, context):
                         ],
                         "Value": 0,
                         "Unit": "Count"
+                    },
+                    {
+                        "MetricName": "Latency",
+                        "Dimensions": [
+                            {
+                                "Name": "Website",
+                                "Value": url
+                            }
+                        ],
+                        "Value": response_time,
+                        "Unit": "Seconds"
                     }
                 ]
             )
 
     return {
+        "statusCode": 200,
         "results": results
     }

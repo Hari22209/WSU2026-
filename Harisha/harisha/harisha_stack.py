@@ -1,7 +1,6 @@
 from aws_cdk import (
     Stack,
     Duration,
-    RemovalPolicy,
     aws_lambda as lambda_,
     aws_events as events,
     aws_events_targets as targets,
@@ -22,25 +21,21 @@ class HarishaStack(Stack):
 
         super().__init__(scope, construct_id, **kwargs)
 
-        hello_lambda = lambda_.Function(
+        webhealth_lambda = lambda_.Function(
             self,
-            "HelloLambda",
+            "WebHealthLambda",
             runtime=lambda_.Runtime.PYTHON_3_11,
             handler="lambda_function.lambda_handler",
             code=lambda_.Code.from_asset("lambda")
         )
 
-        hello_lambda.add_to_role_policy(
+        webhealth_lambda.add_to_role_policy(
             iam.PolicyStatement(
                 actions=[
                     "cloudwatch:PutMetricData"
                 ],
                 resources=["*"]
             )
-        )
-
-        hello_lambda.apply_removal_policy(
-            RemovalPolicy.DESTROY
         )
 
         schedule = events.Rule(
@@ -52,7 +47,7 @@ class HarishaStack(Stack):
         )
 
         schedule.add_target(
-            targets.LambdaFunction(hello_lambda)
+            targets.LambdaFunction(webhealth_lambda)
         )
 
         websites = [
@@ -61,7 +56,10 @@ class HarishaStack(Stack):
             "https://www.amazon.com/"
         ]
 
-        for website in websites:
+        availability_metrics = []
+        latency_metrics = []
+
+        for index, website in enumerate(websites):
 
             availability_metric = cloudwatch.Metric(
                 namespace="WebHealth",
@@ -83,9 +81,17 @@ class HarishaStack(Stack):
                 statistic="Average"
             )
 
+            availability_metrics.append(
+                availability_metric
+            )
+
+            latency_metrics.append(
+                latency_metric
+            )
+
             availability_metric.create_alarm(
                 self,
-                f"AvailabilityAlarm{websites.index(website)}",
+                f"AvailabilityAlarm{index}",
                 threshold=1,
                 evaluation_periods=1,
                 comparison_operator=(
@@ -95,7 +101,7 @@ class HarishaStack(Stack):
 
             latency_metric.create_alarm(
                 self,
-                f"LatencyAlarm{websites.index(website)}",
+                f"LatencyAlarm{index}",
                 threshold=2,
                 evaluation_periods=1,
                 comparison_operator=(
@@ -112,29 +118,21 @@ class HarishaStack(Stack):
         dashboard.add_widgets(
             cloudwatch.GraphWidget(
                 title="Website Availability",
-                left=[
-                    cloudwatch.Metric(
-                        namespace="WebHealth",
-                        metric_name="Availability",
-                        period=Duration.minutes(30),
-                        statistic="Average"
-                    )
-                ],
-                width=12
+                left=availability_metrics,
+                width=12,
+                height=6,
+                left_y_axis=cloudwatch.YAxisProps(
+                    min=0,
+                    max=1
+                )
             )
         )
 
         dashboard.add_widgets(
             cloudwatch.GraphWidget(
                 title="Website Latency",
-                left=[
-                    cloudwatch.Metric(
-                        namespace="WebHealth",
-                        metric_name="Latency",
-                        period=Duration.minutes(30),
-                        statistic="Average"
-                    )
-                ],
-                width=12
+                left=latency_metrics,
+                width=12,
+                height=6
             )
         )
