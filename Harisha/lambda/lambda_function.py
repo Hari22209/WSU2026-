@@ -74,8 +74,9 @@ def lambda_handler(event, context):
 
             results.append({
                 "website": url,
-                "status": "DOWN",
+                "status_code": 0,
                 "response_time": response_time,
+                "status": "DOWN",
                 "error": str(e)
             })
 

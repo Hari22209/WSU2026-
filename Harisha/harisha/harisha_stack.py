@@ -1,11 +1,16 @@
 from aws_cdk import (
     Stack,
     Duration,
+    RemovalPolicy,
     aws_lambda as lambda_,
     aws_events as events,
     aws_events_targets as targets,
     aws_cloudwatch as cloudwatch,
+    aws_cloudwatch_actions as cloudwatch_actions,
     aws_iam as iam,
+    aws_sns as sns,
+    aws_sns_subscriptions as subscriptions,
+    aws_dynamodb as dynamodb,
 )
 from constructs import Construct
 
@@ -21,46 +26,100 @@ class HarishaStack(Stack):
 
         super().__init__(scope, construct_id, **kwargs)
 
+        # WebHealth Lambda
         webhealth_lambda = lambda_.Function(
             self,
             "WebHealthLambda",
             runtime=lambda_.Runtime.PYTHON_3_11,
             handler="lambda_function.lambda_handler",
-            code=lambda_.Code.from_asset("lambda")
+            code=lambda_.Code.from_asset("lambda"),
         )
 
+        # Allow WebHealth Lambda to publish metrics to CloudWatch
         webhealth_lambda.add_to_role_policy(
             iam.PolicyStatement(
                 actions=[
                     "cloudwatch:PutMetricData"
                 ],
-                resources=["*"]
+                resources=["*"],
             )
         )
 
+        # Run WebHealth Lambda every 30 minutes
         schedule = events.Rule(
             self,
             "WebsiteMonitorSchedule",
             schedule=events.Schedule.rate(
                 Duration.minutes(30)
-            )
+            ),
         )
 
         schedule.add_target(
             targets.LambdaFunction(webhealth_lambda)
         )
 
+        # Websites to monitor
         websites = [
             "https://www.westernsydney.edu.au/",
             "https://www.google.com/",
-            "https://www.amazon.com/"
+            "https://www.amazon.com/",
         ]
 
         availability_metrics = []
         latency_metrics = []
 
+        # DynamoDB table for alarm information
+        alarm_table = dynamodb.Table(
+            self,
+            "AlarmInformationTable",
+            partition_key=dynamodb.Attribute(
+                name="alarm_id",
+                type=dynamodb.AttributeType.STRING,
+            ),
+            billing_mode=dynamodb.BillingMode.PAY_PER_REQUEST,
+            removal_policy=RemovalPolicy.DESTROY,
+        )
+
+        # Lambda for storing alarm information in DynamoDB
+        fn_database = lambda_.Function(
+            self,
+            "AlarmDatabaseLambda",
+            runtime=lambda_.Runtime.PYTHON_3_11,
+            handler="database_logger.lambda_handler",
+            code=lambda_.Code.from_asset("lambda"),
+            environment={
+                "TABLE_NAME": alarm_table.table_name
+            },
+        )
+
+        # Give database Lambda permission to write to DynamoDB
+        alarm_table.grant_write_data(fn_database)
+
+        # SNS topic
+        alarm_topic = sns.Topic(
+            self,
+            "alarmnotification",
+            display_name="WebHealth Alarm Notifications",
+        )
+
+        # Email subscription
+        alarm_topic.add_subscription(
+            subscriptions.EmailSubscription(
+                "22099290@westernsydney.edu.au"
+            )
+        )
+
+        # Send SNS messages to database Lambda
+        alarm_topic.add_subscription(
+            subscriptions.LambdaSubscription(
+                fn_database
+            )
+        )
+
+        # Create CloudWatch metrics and alarms
         for index, website in enumerate(websites):
 
+            # Availability metric
             availability_metric = cloudwatch.Metric(
                 namespace="WebHealth",
                 metric_name="Availability",
@@ -68,9 +127,10 @@ class HarishaStack(Stack):
                     "Website": website
                 },
                 period=Duration.minutes(30),
-                statistic="Average"
+                statistic="Average",
             )
 
+            # Latency metric
             latency_metric = cloudwatch.Metric(
                 namespace="WebHealth",
                 metric_name="Latency",
@@ -78,7 +138,7 @@ class HarishaStack(Stack):
                     "Website": website
                 },
                 period=Duration.minutes(30),
-                statistic="Average"
+                statistic="Average",
             )
 
             availability_metrics.append(
@@ -89,32 +149,50 @@ class HarishaStack(Stack):
                 latency_metric
             )
 
-            availability_metric.create_alarm(
+            # Availability alarm
+            availability_alarm = availability_metric.create_alarm(
                 self,
                 f"AvailabilityAlarm{index}",
                 threshold=1,
                 evaluation_periods=1,
                 comparison_operator=(
                     cloudwatch.ComparisonOperator.LESS_THAN_THRESHOLD
+                ),
+            )
+
+            # Send availability alarm to SNS
+            availability_alarm.add_alarm_action(
+                cloudwatch_actions.SnsAction(
+                    alarm_topic
                 )
             )
 
-            latency_metric.create_alarm(
+            # Latency alarm
+            latency_alarm = latency_metric.create_alarm(
                 self,
                 f"LatencyAlarm{index}",
                 threshold=2,
                 evaluation_periods=1,
                 comparison_operator=(
                     cloudwatch.ComparisonOperator.GREATER_THAN_THRESHOLD
+                ),
+            )
+
+            # Send latency alarm to SNS
+            latency_alarm.add_alarm_action(
+                cloudwatch_actions.SnsAction(
+                    alarm_topic
                 )
             )
 
+        # CloudWatch Dashboard
         dashboard = cloudwatch.Dashboard(
             self,
             "WebHealthDashboard",
-            dashboard_name="WebHealthDashboard"
+            dashboard_name="WebHealthDashboard",
         )
 
+        # Availability graph
         dashboard.add_widgets(
             cloudwatch.GraphWidget(
                 title="Website Availability",
@@ -123,16 +201,17 @@ class HarishaStack(Stack):
                 height=6,
                 left_y_axis=cloudwatch.YAxisProps(
                     min=0,
-                    max=1
-                )
+                    max=1,
+                ),
             )
         )
 
+        # Latency graph
         dashboard.add_widgets(
             cloudwatch.GraphWidget(
                 title="Website Latency",
                 left=latency_metrics,
                 width=12,
-                height=6
+                height=6,
             )
         )
