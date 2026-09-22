@@ -71,6 +71,7 @@ class PipelineStack(Stack):
                     "python -m pip install -r requirements.txt",
                     "npm install -g aws-cdk",
                     "cdk synth",
+                    "cp -R cdk.out ../cdk.out",
                 ],
             ),
         )
