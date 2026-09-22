@@ -67,6 +67,7 @@ class PipelineStack(Stack):
                 input=source,
                 
                 commands=[
+                    "cd Harisha",
                     "python -m pip install -r requirements.txt",
                     "npm install -g aws-cdk",
                     "cdk synth",
