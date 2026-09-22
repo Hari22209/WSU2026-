@@ -2,13 +2,13 @@
 import aws_cdk as cdk
 
 
-from harisha.harisha_stack import HarishaStack
+from harisha.pipeline_stack import PipelineStack
 
 app = cdk.App()
 
-HarishaStack(
+PipelineStack(
     app,
-    "HarishaStack",
+    "PipelineStack",
 )
 
 app.synth()

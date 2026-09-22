@@ -22,6 +22,7 @@ class HarishaStack(Stack):
         self,
         scope: Construct,
         construct_id: str,
+        dashboard_name: str = "WebHealthDashboard",
         **kwargs
     ) -> None:
         
@@ -195,7 +196,7 @@ class HarishaStack(Stack):
         dashboard = cloudwatch.Dashboard(
             self,
             "WebHealthDashboard",
-            dashboard_name="WebHealthDashboard",
+            dashboard_name=dashboard_name,
             
         ) 
         
