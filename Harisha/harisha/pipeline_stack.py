@@ -82,7 +82,7 @@ class PipelineStack(Stack):
         pipeline.add_stage(
             HarishaStage(
                 self,
-                "BetaGamma"
+                "Beta"
             )
         )
         
