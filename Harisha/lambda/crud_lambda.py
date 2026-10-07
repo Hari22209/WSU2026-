@@ -113,7 +113,7 @@ def update_website(event, website_id):
         )
         
     try:
-        body = json.loads(event(event.get("body") or "{}"))
+        body = json.loads(event.get("body") or "{}")
     except json.JSONDecodeError:
         return response(
             400,
