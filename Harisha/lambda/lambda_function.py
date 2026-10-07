@@ -1,23 +1,23 @@
+import os
 import urllib.request
-import json
 import time
 import boto3
 
 
-
+dynamobd = boto3.resource("dynamodb")
 cloudwatch = boto3.client("cloudwatch")
 
+TABLE_NAME = os.environ["TABLE_NAME"]
+table = dynamodb.Table(TABLE_NAME)
 
 def lambda_handler(event, context):
+    result = table.scan()
+    websites = result.get("Items",[])
     
+    results = []
     
-    with open("websites.json", "r") as file:
-        data = json.load(file)
-        
-        
-    results = []    
-    
-    for url in data["websites"]:
+    for item in websites:
+        url = item["url"]
         
         start_time = time.time()
         
@@ -35,10 +35,11 @@ def lambda_handler(event, context):
             )
             
             results.append({
+                "website_id": item["website_id"],
                 "website": url,
                 "status_code": response.status,
                 "response_time": response_time,
-                "status": "UP"
+                "status": "UP",
             })
             
             cloudwatch.put_metric_data(
@@ -51,11 +52,11 @@ def lambda_handler(event, context):
                             {
                                 
                                 "Name": "Website",
-                                "Value": url
+                                "Value": url,
                             }
                         ],
                         "Value": 1,
-                        "Unit": "Count"
+                        "Unit": "Count",
                     },
                     {
                         
@@ -64,14 +65,14 @@ def lambda_handler(event, context):
                             {
                                 
                                 "Name": "Website",
-                                "Value": url
+                                "Value": url,
                                 
                             }
                         ],
                         "Value": response_time,
-                        "Unit": "Seconds"
-                    }
-                ]
+                        "Unit": "Seconds",
+                    },
+                ],
             )
             
         except Exception as e:
@@ -82,6 +83,7 @@ def lambda_handler(event, context):
             )  
         
             results.append({
+                "website_id": item["website_id"],
                 "website": url,
                 "status_code": 0,
                 "response_time": response_time,
@@ -99,11 +101,11 @@ def lambda_handler(event, context):
                         "Dimensions": [
                             {
                                 "Name": "Website",
-                                "Value": url
+                                "Value": url,
                             }
                         ],
                         "Value": 0,
-                        "Unit": "Count"
+                        "Unit": "Count",
                     },
                     {
                         "MetricName": "Latency",
@@ -111,21 +113,21 @@ def lambda_handler(event, context):
                             {
                                 
                                  "Name": "Website",
-                                 "Value": url
+                                 "Value": url,
                                 
                             }
                         ],
                         "Value": response_time,
-                        "Unit": "Seconds"
-                    }
-                ]
+                        "Unit": "Seconds",
+                    },
+                ],
                     
             )
               
             
     return {
         "statusCode":200,
-        "results": results
+        "results": results,
     
 }    
                        

@@ -24,11 +24,13 @@ class HarishaStage(Stage):
             **kwargs
         )
         
-        HarishaStack(
+        stack = HarishaStack(
             self,
             "HarishaStack" ,
             dashboard_name=f"{construct_id}-WebHealthDashboard",
         )
+        
+        self.function_name = stack.function_name_output
         
 class PipelineStack(Stack):
     

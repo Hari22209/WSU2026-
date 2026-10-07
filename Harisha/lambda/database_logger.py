@@ -1,39 +1,35 @@
 import json
 import os
-import boto3
-from datetime import datetime, timezone
+import uuid
 
+import boto3
 
 dynamodb = boto3.resource("dynamodb")
 
 TABLE_NAME = os.environ["TABLE_NAME"]
+table = dynamodb.Table(TABLE_NAME)
 
 
 
 def lambda_handler(event, context):
-    
-    table = dynamodb.Table(TABLE_NAME)
-    
-    for record in event.get("Records", []):
+    alarm_id = str(uuid.uuid4())
         
-        sns_message = record["Sns"]["Message"]
+    item ={
+        "alarm_id": alarm_id,
+        "alarm_message": json.dumps(event, default=str),
+    }
         
-        item ={
-            "alarm_id": record["Sns"]["MessageId"],
-            "timestamp": datetime.now(
-                timezone.utc
-            ).isoformat(),
-            "alarm_message": sns_message,
-        }
-        
-        table.put_item(
-            Item=item
+    table.put_item(
+        Item=item
         )
         
     return {
         "statusCode": 200,
         "body": json.dumps(
-            "Alarm information stored successfully"
+            {
+                "message": "Alarm information saved",
+                "alarm_id": alarm_id,
+         }
             
         ),
       

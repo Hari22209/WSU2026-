@@ -1,14 +1,11 @@
 #!/usr/bin/env python3
-import aws_cdk as cdk
 
+import aws_cdk as cdk
 
 from harisha.pipeline_stack import PipelineStack
 
 app = cdk.App()
 
-PipelineStack(
-    app,
-    "PipelineStack",
-)
+PipelineStack(app, "PipelineStack")
 
 app.synth()

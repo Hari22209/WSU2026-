@@ -1,6 +1,7 @@
 from aws_cdk import (
     Stack,
     Duration,
+    CfnOutput,
     RemovalPolicy,
     aws_lambda as lambda_,
     aws_events as events,
@@ -11,6 +12,7 @@ from aws_cdk import (
     aws_sns as sns,
     aws_sns_subscriptions as subscriptions,
     aws_dynamodb as dynamodb,
+    aws_apigateway as apigateway,
 )
 from constructs import Construct
 
@@ -26,18 +28,38 @@ class HarishaStack(Stack):
         **kwargs
     ) -> None:
         
-        super() .__init__(scope, construct_id, **kwargs)
+        super().__init__(scope, construct_id, **kwargs)
         
-        # WebHealth Lambda
+        # DynamoDB table for monitored websites
+        target_table = dynamodb.Table(
+            self,
+            "TargetWebsiteTable",
+            partition_key=dynamodb.Attribute(
+                name="website_id",
+                type=dynamodb.AttributeType.STRING,
+            ),
+            billing_mode=dynamodb.BillingMode.PAY_PER_REQUEST,
+            removal_policy=RemovalPolicy.DESTROY,
+        )
+        
+        
+        # WebHealth monitoring Lambda
         webhealth_lambda = lambda_.Function(
             self,
             "WebHealthLambda",
             runtime=lambda_.Runtime.PYTHON_3_11,
             handler="lambda_function.lambda_handler",
             code=lambda_.Code.from_asset("lambda"),
+            timeout=Duration.seconds(30),
+            environment={
+                "TABLE_NAME": target_table.table_name,
+            },
         )
         
-        #Allow WebHealth Lambda to publish metrics to CloudWatch
+        # Allow monitoring Lambda to read websites 
+        target_table.grant_read_data(webhealth_lambda)
+        
+        # Allow Lambda to publish CloudWatch metrics
         webhealth_lambda.add_to_role_policy(
             iam.PolicyStatement(
                 actions=[
@@ -47,13 +69,86 @@ class HarishaStack(Stack):
             )
         )
         
+        
+        self.function_name_output = CfnOutput(
+            self,
+            "WebHealthFunctionName",
+            value=webhealth_lambda.function_name,
+        )
+        
+        # CRUD Lambda
+        
+        crud_lambda = lambda_.Function(
+            self,
+            "CrudLambda",
+            runtime=lambda_.Runtime.PYTHON_3_11,
+            handler="crud_lambda.lambda_handler",
+            code=lambda_.Code.from_asset("lambda"),
+            timeout=Duration.seconds(30),
+            environment={
+                "TABLE_NAME": target_table.table_name,
+            },
+        )
+        
+        target_table.grant_read_write_data(crud_lambda)
+        
+        # API Gateway 
+        api = apigateway.RestApi(
+            self,
+            "WebHealthApi",
+            rest_api_name="WebHealthWebsiteApi",
+            description="CRUD API for monitored websites",
+        )
+        
+        websites_resource = api.root.add_resource("websites")
+        
+        website_id_resource = websites_resource.add_resource(
+            "{website_id}"
+        )
+        
+        #POST /websites
+        websites_resource.add_method(
+            "POST",
+            apigateway.LambdaIntegration(crud_lambda),
+        )
+        
+        # GET /websites
+        websites_resource.add_method(
+            "GET",
+            apigateway.LambdaIntegration(crud_lambda),
+        )
+           
+        # GET /websites/{website_id},
+        website_id_resource.add_method(
+            "GET",
+            apigateway.LambdaIntegration(crud_lambda),
+        )
+        
+         # PUT /websites/{website_id},
+        website_id_resource.add_method(
+            "PUT",
+            apigateway.LambdaIntegration(crud_lambda),
+        )
+        
+         # DELETE /websites/{website_id},
+        website_id_resource.add_method(
+            "DELETE",
+            apigateway.LambdaIntegration(crud_lambda),
+        )
+        
+        CfnOutput(
+            self,
+            "WebHealthApiUrl",
+            value=api.url,
+        )
+        
         #Run WebHealth Lambda every 30 minutes
         schedule = events.Rule(
             self,
             "WebsiteMonitorSchedule",
             schedule=events.Schedule.rate(
             Duration.minutes(30)
-        ),
+          ),
         
         )
         
@@ -61,45 +156,36 @@ class HarishaStack(Stack):
             targets.LambdaFunction(webhealth_lambda)
         )
         
-        #Websites to monitor
-        websites = [
-            "https://www.westernsydney.edu.au/",
-            "https://www.google.com/",
-            "https://www.amazon.com/",
-        ]
+        # DynamoDB table for alarm information
         
-        
-        availability_metrics = []
-        latency_metrics = []
-        
-        
-        #DynamoDB table for alarm GetSummaryInformation
         alarm_table = dynamodb.Table(
             self,
             "AlarmInformationTable",
             partition_key=dynamodb.Attribute(
-                name="alarm_id",
-                type=dynamodb.AttributeType.STRING,
-            ),
-            billing_mode=dynamodb.BillingMode.PAY_PER_REQUEST,
-            removal_policy=RemovalPolicy.DESTROY,         
+            name="alarm_id",
+            type=dynamodb.AttributeType.STRING,
+        ),
+        billing_mode=dynamodb.BillingMode.PAY_PER_REQUEST,
+        removal_policy=RemovalPolicy.DESTROY,
+        
         )
         
+        # Lambda to save alarm information into DynamoDB
         
-        #Lambda for storing alarm information in DynamoDB
-        fn_database = lambda_.Function(
+        database_lambda = lambda_.Function(
             self,
             "AlarmDatabaseLambda",
             runtime=lambda_.Runtime.PYTHON_3_11,
             handler="database_logger.lambda_handler",
             code=lambda_.Code.from_asset("lambda"),
             environment={
-                "TABLE_NAME": alarm_table.table_name
+                "TABLE_NAME": alarm_table.table_name,
             },
+         
         )
         
-        #Give database Lambda permission to write to DynamoDB
-        alarm_table.grant_write_data(fn_database)
+        alarm_table.grant_write_data(database_lambda)
+        
         
         # SNS topic
         alarm_topic = sns.Topic(
@@ -119,11 +205,18 @@ class HarishaStack(Stack):
         # Send SNS messages to database lambda
         alarm_topic.add_subscription(
             subscriptions.LambdaSubscription(
-                fn_database
+                database_lambda
             )
         )
+        # CloudWatch metrics and alarms
+        websites = [
+             "https://www.westernsydney.edu.au/",
+            "https://www.google.com/",
+            "https://www.amazon.com/",
+        ]
         
-        #Create Cloudwatch metrics and alarms
+        availability_metrics = []
+        latency_metrics = []
         for index, website in enumerate(websites):
             
             #Availability metric
@@ -163,7 +256,8 @@ class HarishaStack(Stack):
                 threshold=1,
                 evaluation_periods=1,
                 comparison_operator=(
-                    cloudwatch.ComparisonOperator.LESS_THAN_THRESHOLD
+                    cloudwatch.ComparisonOperator
+                    .LESS_THAN_THRESHOLD
                 ),
             )
             
@@ -181,7 +275,8 @@ class HarishaStack(Stack):
                 threshold=2,
                 evaluation_periods=1,
                 comparison_operator=(
-                    cloudwatch.ComparisonOperator.GREATER_THAN_THRESHOLD   
+                    cloudwatch.ComparisonOperator
+                    .GREATER_THAN_THRESHOLD   
                ),
             ) 
             
@@ -192,7 +287,7 @@ class HarishaStack(Stack):
             )
             
             
-        #CloudWatch Dashboard
+        # CloudWatch Dashboard
         dashboard = cloudwatch.Dashboard(
             self,
             "WebHealthDashboard",
