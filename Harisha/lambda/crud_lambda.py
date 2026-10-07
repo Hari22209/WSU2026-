@@ -145,10 +145,10 @@ def update_website(event, website_id):
             "website_id": website_id
         },
         UpdateExpression="SET #url = :url",
-        ExpressionAttributesName={
+        ExpressionAttributeNames={
             "#url": "url"
         },
-        ExpressionAttributeValue={
+        ExpressionAttributeValues={
             ":url": url
         },
         ReturnValues="ALL_NEW"

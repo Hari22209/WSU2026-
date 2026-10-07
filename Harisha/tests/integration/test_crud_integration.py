@@ -3,7 +3,6 @@ import os
 import time
 import urllib.error
 import urllib.request
-import uuid
 
 import pytest
 
@@ -23,15 +22,16 @@ def call(method, path, body=None):
     return status, json.loads(text or "{}"), time.time() - start
 
 
-def test_api_create_read_delete_and_dynamodb_latency():
-    wid = "it-" + uuid.uuid4().hex[:8]
+def test_api_crud_cycle_and_dynamodb_latency():
+    status, item, write_time = call("POST", "/websites", {"url": "https://example.com"})
+    assert status == 201
+    wid = item["website_id"]
     try:
-        status, _, write_time = call("POST", "/websites",
-                                     {"website_id": wid, "url": "https://example.com"})
-        assert status == 201
-        status, item, read_time = call("GET", f"/websites/{wid}")
-        assert status == 200 and item["url"] == "https://example.com"
-        assert write_time < 3 and read_time < 3   # DynamoDB read/write round trip
+        status, got, read_time = call("GET", f"/websites/{wid}")
+        assert status == 200 and got["url"] == "https://example.com"
+        status, upd, _ = call("PUT", f"/websites/{wid}", {"url": "https://example.org"})
+        assert status == 200 and upd["url"] == "https://example.org"
+        assert write_time < 3 and read_time < 3
     finally:
         call("DELETE", f"/websites/{wid}")
     assert call("GET", f"/websites/{wid}")[0] == 404
