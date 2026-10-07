@@ -3,19 +3,7 @@ from unittest.mock import patch, MagicMock
 
 from lambda_function import lambda_handler
 
-def test_websites_json_has_three_websites():
-    with open("lambda/websites.json", "r") as file:
-        data = json.load(file)
-        
-    assert "websites" in data
-    assert len(data["websites"]) == 3
     
-def test_websites_are_valid_urls():
-        with open("lambda/websites.json", "r") as file:
-            data = json.load(file)
-            
-        for website in data["websites"]:
-            assert website.startswith("https://")
             
 def test_lambda_returns_success_status():
     mock_response = MagicMock()

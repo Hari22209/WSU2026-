@@ -86,6 +86,13 @@ class PipelineStack(Stack):
             )
         )
         
+        pipeline.add_stage(
+            HarishaStage(
+                self,
+                "Gamma"
+            )
+        )
+
         # Production stage 
         pipeline.add_stage(
             HarishaStage(

@@ -7,6 +7,7 @@ import boto3
 dynamobd = boto3.resource("dynamodb")
 cloudwatch = boto3.client("cloudwatch")
 
+dynamodb = boto3.resource("dynamodb")
 TABLE_NAME = os.environ["TABLE_NAME"]
 table = dynamodb.Table(TABLE_NAME)
 

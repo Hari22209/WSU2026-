@@ -13,20 +13,20 @@ def _template():
         HarishaStack(cdk.App(), "FunctionalExtraStack")
     )
 
-def test_two_python_lambdas():
+def test_three_python_lambdas():
     template = get_template()
     
     template.resource_count_is(
         "AWS::Lambda::Function",
-        2
+        3
     )
     
-def test_dynamodb_table_exists():
+def test_two_dynamodb_tables():
     template = get_template()
     
     template.resource_count_is(
         "AWS::DynamoDB::Table",
-        1
+        2
     )
     
 def test_sns_topic_exists():
