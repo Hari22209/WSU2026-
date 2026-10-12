@@ -5,6 +5,11 @@ import time
 import boto3
 import pytest
 
+session = boto3.Session(
+    profile_name=os.getenv("AWS_PROFILE", "default"),
+    region_name="us-east-1",
+)
+
 FUNCTION = os.environ.get("WEBHEALTH_FUNCTION_NAME")
 
 pytestmark = pytest.mark.skipif(
@@ -13,7 +18,7 @@ pytestmark = pytest.mark.skipif(
 )
 
 def invoke():
-    response = boto3.client("lambda").invoke(
+    response = session.client("lambda", region_name="us-east-1").invoke(
         FunctionName=FUNCTION
     )
     
@@ -31,7 +36,7 @@ def test_deployed_lambda_checks_all_sites():
 def test_metrics_reach_cloudwatch():
     invoke()
     
-    cloudwatch = boto3.client("cloudwatch")
+    cloudwatch = session.client("cloudwatch", region_name="us-east-1")
     
     for _ in range(12):
         metrics = cloudwatch.list_metrics(
