@@ -100,12 +100,12 @@ Users can create new website targets, view the website list, update website deta
 
 # API Endpoints
 
-Method    Endpoint                Purpose
-POST      /websites               Add a website
-GET       /websites               View the website list
-GET       /websites/{website_id}  View one website
-PUT       /websites/{website_id}  Update a website
-DELETE    /websites/{website_id}  Delete a website
+Method    Endpoint                  Purpose
+POST      '/websites'               Add a website
+GET       '/websites'               View the website list
+GET       '/websites/{website_id}'  View one website
+PUT       '/websites/{website_id}'  Update a website
+DELETE    '/websites/{website_id}'  Delete a website
 
 # Reading, Updating and Deleting Websites
 Users can retrieve a website using its ID, update its URL or delete it from DynamoDB. If a website cannot be found, the API returns HTTP 404.
