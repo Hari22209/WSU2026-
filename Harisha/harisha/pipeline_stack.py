@@ -71,6 +71,7 @@ class PipelineStack(Stack):
                 commands=[
                     "cd Harisha",
                     "python -m pip install -r requirements.txt",
+                    "python -m pytest -q tests/test_unit.py tests/test_crud.py",
                     "npm install -g aws-cdk",
                     "cdk synth",
                     "cp -R cdk.out ../cdk.out",
