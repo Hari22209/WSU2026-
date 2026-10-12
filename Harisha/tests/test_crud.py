@@ -77,3 +77,35 @@ def test_crud_lifecycle():
 
         assert h(event("DELETE", website_id=wid), None)["statusCode"] in (200, 204)
         assert h(event("GET", website_id=wid), None)["statusCode"] == 404
+
+
+def test_create_website_returns_dynamodb_write_time_header():
+    fake = MagicMock()
+
+    with patch.object(crud_lambda, "table", fake):
+        resp = crud_lambda.lambda_handler(
+            event("POST", {"url": "https://example.com"}), None
+        )
+
+    assert resp["statusCode"] == 201
+    assert "X-DynamoDB-Write-Time-Ms" in resp["headers"]
+    assert float(resp["headers"]["X-DynamoDB-Write-Time-Ms"]) >= 0
+
+
+def test_get_website_returns_dynamodb_read_time_header():
+    fake = MagicMock()
+    fake.get_item.return_value = {
+        "Item": {
+            "website_id": "test-123",
+            "url": "https://example.com"
+        }
+    }
+
+    with patch.object(crud_lambda, "table", fake):
+        resp = crud_lambda.lambda_handler(
+            event("GET", website_id="test-123"), None
+        )
+
+    assert resp["statusCode"] == 200
+    assert "X-DynamoDB-Read-Time-Ms" in resp["headers"]
+    assert float(resp["headers"]["X-DynamoDB-Read-Time-Ms"]) >= 0

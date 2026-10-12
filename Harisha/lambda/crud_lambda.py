@@ -1,7 +1,7 @@
 import json
 import os
 import uuid
-
+import time 
 import boto3
 
 
@@ -11,12 +11,17 @@ TABLE_NAME = os.environ["TABLE_NAME"]
 table = dynamodb.Table(TABLE_NAME)
 
 
-def response(status_code, body):
+def response(status_code, body, extra_headers=None):
+    headers = {
+        "Content-Type": "application/json"
+    }
+    
+    if extra_headers:
+        headers.update(extra_headers)
+        
     return {
         "statusCode": status_code,
-        "headers": {
-            "Content-Type": "application/json"
-        },
+        "headers": headers,
         "body": json.dumps(body, default=str)
     }
 
@@ -70,11 +75,14 @@ def create_website(event):
         "url": url
     }
 
+    start_time = time.perf_counter()
     table.put_item(Item=item)
+    write_time_ms = (time.perf_counter() - start_time) * 1000
 
     return response(
         201,
-        item
+        item,
+        {"X-DynamoDB-Write-Time-Ms": str(round(write_time_ms, 3))}
     )
 
 
@@ -83,30 +91,26 @@ def get_websites():
 
     return response(
         200,
-        {
-            "websites": result.get("Items", [])
-        }
+        {"websites": result.get("Items", [])}
     )
 
 
 def get_website(website_id):
+    start_time = time.perf_counter()
     result = table.get_item(
-        Key={
-            "website_id": website_id
-        }
+        Key={"website_id": website_id}
     )
+    read_time_ms = (time.perf_counter() - start_time) * 1000
 
     item = result.get("Item")
 
     if not item:
-        return response(
-            404,
-            {"error": "Website not found"}
-        )
+        return response(404, {"error": "Website not found"})
 
     return response(
         200,
-        item
+        item,
+        {"X-DynamoDB-Read-Time-Ms": str(round(read_time_ms, 3))}
     )
 
 

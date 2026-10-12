@@ -78,3 +78,45 @@ def test_availability_alarm_config():
         }
     )
                                               
+
+def test_crud_api_routes_are_configured():
+    template = get_template()
+
+    template.resource_count_is(
+        "AWS::ApiGateway::RestApi",
+        1
+    )
+
+    template.resource_count_is(
+        "AWS::ApiGateway::Resource",
+        2
+    )
+
+    template.resource_count_is(
+        "AWS::ApiGateway::Method",
+        5
+    )
+
+
+def test_crud_api_supports_get_and_post_methods():
+    template = get_template()
+    template.has_resource_properties(
+        "AWS::ApiGateway::Method",
+        {"HttpMethod": "GET"}
+    )
+    template.has_resource_properties(
+        "AWS::ApiGateway::Method",
+        {"HttpMethod": "POST"}
+    )
+
+
+def test_crud_api_supports_put_and_delete_methods():
+    template = get_template()
+    template.has_resource_properties(
+        "AWS::ApiGateway::Method",
+        {"HttpMethod": "PUT"}
+    )
+    template.has_resource_properties(
+        "AWS::ApiGateway::Method",
+        {"HttpMethod": "DELETE"}
+    )
