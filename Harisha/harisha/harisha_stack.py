@@ -136,7 +136,7 @@ class HarishaStack(Stack):
             apigateway.LambdaIntegration(crud_lambda),
         )
         
-        CfnOutput(
+        self.api_url_output = CfnOutput(
             self,
             "WebHealthApiUrl",
             value=api.url,
