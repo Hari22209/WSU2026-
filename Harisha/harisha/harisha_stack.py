@@ -1,3 +1,4 @@
+from pathlib import Path
 from aws_cdk import (
     Stack,
     Duration,
@@ -49,7 +50,7 @@ class HarishaStack(Stack):
             "WebHealthLambda",
             runtime=lambda_.Runtime.PYTHON_3_11,
             handler="lambda_function.lambda_handler",
-            code=lambda_.Code.from_asset("lambda"),
+            code=lambda_.Code.from_asset(str(Path(__file__).resolve().parents[1] / "lambda")),
             timeout=Duration.seconds(30),
             environment={
                 "TABLE_NAME": target_table.table_name,
@@ -83,7 +84,7 @@ class HarishaStack(Stack):
             "CrudLambda",
             runtime=lambda_.Runtime.PYTHON_3_11,
             handler="crud_lambda.lambda_handler",
-            code=lambda_.Code.from_asset("lambda"),
+            code=lambda_.Code.from_asset(str(Path(__file__).resolve().parents[1] / "lambda")),
             timeout=Duration.seconds(30),
             environment={
                 "TABLE_NAME": target_table.table_name,
@@ -177,7 +178,7 @@ class HarishaStack(Stack):
             "AlarmDatabaseLambda",
             runtime=lambda_.Runtime.PYTHON_3_11,
             handler="database_logger.lambda_handler",
-            code=lambda_.Code.from_asset("lambda"),
+            code=lambda_.Code.from_asset(str(Path(__file__).resolve().parents[1] / "lambda")),
             environment={
                 "TABLE_NAME": alarm_table.table_name,
             },
