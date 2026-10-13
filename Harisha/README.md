@@ -1,37 +1,33 @@
-# Website Monitoring Lambda Project
+# WebHealth – Website Monitoring Project
 
 ## Overview
 
-This project uses AWS CDK (Cloud Development Kit) to deploy a serverless website monitoring application on AWS.
+WebHealth is a serverless application built using AWS CDK and Python. It checks whether websites are working and records their availability and response time.
 
-An AWS Lambda function runs every 30 minutes using Amazon EventBridge. It checks the website status, HTTP response code and response time. CloudWatch monitors the website metrics, and SNS sends notifications when an alarm is triggered. Alarm information is also saved in DynamoDB.
+Amazon EventBridge runs the monitoring Lambda function every 30 minutes. The function checks each website and sends the results to Amazon CloudWatch. If a website has a problem or takes too long to respond, CloudWatch alarms can send notifications through Amazon SNS.
 
-The project also includes a CRUD API that allows users to add, view, update and delete website targets using Amazon API Gateway.
-
+The project also uses DynamoDB to store website targets and alarm information. A REST API allows users to add, view, update and delete websites.
 
 ## AWS Services Used
 
-- AWS Lambda
-- Amazon EventBridge
-- AWS CloudWatch
-- CloudWatch Alarms
-- ClouWatch Dashboard
-- Amazon SNS
-- Amazon DynamoDB
-- AWS CloudFormation
-- AWS IAM
-- AWS CDK
+This project uses the following AWS services:
 
-## Functionality
+- AWS Lambda – runs the application code.
+- Amazon EventBridge – schedules the website checks.
+- Amazon API Gateway – provides the CRUD API.
+- Amazon DynamoDB – stores website targets and alarm information.
+- Amazon CloudWatch – records metrics and monitors website health.
+- Amazon SNS – sends alarm notifications.
+- AWS CodePipeline and CodeBuild – automate testing and deployment.
+- AWS CloudFormation – creates the AWS resources.
+- AWS IAM – manages permissions.
+- AWS CDK – defines the infrastructure using Python.
 
-The Lambda function monitors:
+## Website Monitoring
 
-- Website URL
-- HTTP status code
-- Response time
-- Website availability status
+The monitoring function checks the website URL, HTTP status code, response time and availability.
 
-Example output:
+For example, a successful website check may return:
 
 ```json
 {
@@ -41,150 +37,139 @@ Example output:
   "status": "UP"
 }
 ```
-if a website cannot be reached, the application records it as DOWN and publishes an avalibility value of 0 to CloudWatch.
+
+If a website cannot be reached, it is recorded as `DOWN`, and its availability metric is set to `0`.
 
 ## CloudWatch Monitoring
 
-The Lambda function publishes two metrics to CloudWatch under the webHealth namespace.
+The application publishes two metrics under the `WebHealth` namespace.
 
-Availability -1 when the website is available and 0 when it is unavailable.
+ Metric           Description 
+'Availability'    Records 1 when a website is available and 0    when it is unavilable 
+'Latency'.        Records the website response time in seconds.
 
-Latency - the website response time measured in seconds.
 
-## CloudWatch Alarms
-ClouWatch alarms are configured for each monitored website.
+### CloudWatch Alarms
 
-## Availability Alarm
+The project includes availability and latency alarms. The availability alarm can trigger when the availability value falls below `1`. The latency alarm can trigger when the response time exceeds two seconds.
 
-The Availability alarm is triggered when avalibility falls below 1.
+When an alarm is triggered, Amazon SNS sends notifications to the configured recipients and services.
 
-## Latency Alarm
+### CloudWatch Dashboard
 
-the latency alarm is triggered when latency is greter than 2 seconds.
+The dashboard displays graphs for website availability and latency. These graphs help users check website performance and identify problems.
 
-Both alrms send notifications through the SNS topic.
+## SNS Notifications and DynamoDB
 
-## CloudWatch Dashboard
+Amazon SNS handles notifications from CloudWatch alarms. Depending on the configuration, notifications can be sent by email and passed to the alarm-logging Lambda function.
 
-A CloudWatch dashboard named webHealthDashboard is used to monitor website health.
+The alarm-logging function saves alarm information in the `AlarmInformationTable` DynamoDB table. The stored information includes the alarm ID, timestamp and alarm message.
 
-## The dashboard contains
+## Website Management API
 
-Website Availability graph
-Website Latency graph
+The project includes a REST API built with Amazon API Gateway, Python Lambda and DynamoDB. It allows users to manage the list of websites being monitored.
 
-## SNS notification
+The available endpoints are:
 
-Amazon SNS is used to send notifications when Cloudwatch alarms are triggred.
+ Method    Endpoint                  Purpose 
 
-## The SNS topic is used for:
+ POST     `/websites`                Add a website. 
+ GET      `/websites`                View all websites. 
+ GET      `/websites/{website_id}`   View one website. 
+ PUT      `/websites/{website_id}`   Update a website URL. 
+ DELETE   `/websites/{website_id}`   Remove a website. 
 
-Email notifications
-sending alarm messages to the database logging Lambda
+The API returns HTTP `404` when a requested website cannot be found. Invalid requests can return HTTP `400`.
 
-## DynamoDB Alarm Logging
+More details about the endpoints and requests are available in [`docs/API.md`](docs/API.md).
 
-Alarm notifications are sored in the AlarmInformationTable DynamoDB table
+### DynamoDB Read and Write Timing
 
-the database logging lambda stores
+The API also includes timing information in response headers for successful create and individual-read operations.
 
-Alarm ID
-Timestamp
-Alarm message
+- `X-DynamoDB-Write-Time-Ms` measures the time around a DynamoDB write call.
+- `X-DynamoDB-Read-Time-Ms` measures the time around a DynamoDB read call.
 
-# CRUD API for Website Management
+These measurements include AWS SDK and network overhead, so they do not represent only DynamoDB's internal processing time.
 
-The application provides a REST API through Amazon API Gateway. The API uses a Python Lambda function to manage website targets stored in DynamoDB.
+## Project Structure
 
-Users can create new website targets, view the website list, update website details and delete targets that are no longer needed.
+ File or folder             Purpose 
 
-# API Endpoints
+ `harisha/harisha_stack.py`     Defines the main AWS resources. 
+ `harisha/pipeline_stack.py`    Defines the deployment pipeline   and stages. 
+`lambda/`                       Contains the Lambda function code. 
+`tests/`                        Contains unit, functional and integration tests. 
+ `docs/API.md`                  Explains the CRUD API. 
 
-Method    Endpoint                  Purpose
-POST      '/websites'               Add a website
-GET       '/websites'               View the website list
-GET       '/websites/{website_id}'  View one website
-PUT       '/websites/{website_id}'  Update a website
-DELETE    '/websites/{website_id}'  Delete a website
+## Testing
 
-# Reading, Updating and Deleting Websites
-Users can retrieve a website using its ID, update its URL or delete it from DynamoDB. If a website cannot be found, the API returns HTTP 404.
+Testing is used to check that the application works as expected.
 
-# DynamoDB Read and Write Timing
-The API includes timing headers for successful create and individual read operations.
+- **Unit tests** check individual functions and CRUD logic.
+- **Functional tests** check the application infrastructure and configuration.
+- **Integration tests** check interactions with the deployed API and AWS services.
 
-X-DynamoDB-Write-Time-Ms measures the time around the DynamoDB write call.
-X-DynamoDB-Read-Time-Ms measures the time around the DynamoDB read call.
+To run the unit and functional tests locally, use:
 
-These timings include AWS SDK and network overhead, rather than measuring only DynamoDB's internal processing time.
+```bash
+python -m pytest tests/test_unit.py tests/test_crud.py tests/functional -q
+```
 
-## Infrastructure
+To run integration tests against a deployed stage, set the required `API_URL` and `WEBHEALTH_FUNCTION_NAME` environment variables and run:
 
-The project is deployed using AWS CDK Infrastructure as Code (IaC).
+```bash
+python -m pytest tests/integration -v
+```
 
-Components created:
+Integration tests need the correct configuration and AWS credentials. They may be skipped if the required environment variables are missing.
 
-- Lambda function for website monitoring, alarm logging and website CRUD operations
-- EventBridge scheduled rule (runs every 30 minutes)
-- DynamoDB tables for website targets and alarm information
-- API Gateway routes for CRUD operations
-- CloudWatch metrics, alarms and dashboard
-- SNS notification
-- IAM roles and permission.#
+## CI/CD Pipeline
+
+The project uses AWS CodePipeline to automate testing and deployment. The pipeline includes Beta, Gamma and Prod stages.
+
+The pipeline runs the configured build and tests, creates the CloudFormation template, deploys each stage and runs integration tests after deployment. This helps identify problems before the application moves through the deployment stages.
 
 ## Deployment
 
-Activate virtual environment:
+The project uses AWS CDK to define and deploy the infrastructure.
+
+Activate the virtual environment:
 
 ```bash
 source .venv/bin/activate
 ```
 
-Install dependencies:
+Install the required packages:
 
 ```bash
 pip install -r requirements.txt
 ```
+
 Generate the CloudFormation template:
 
 ```bash
 npx cdk synth
 ```
-Deploy the project using the appropriate CDK stack and AWS profile. for example, to deploy the Beta stack:
 
-npx cdk deploy PipelineStack/Beta/HarishaStack --profile academy
+The pipeline normally handles deployment after changes are pushed to the configured source branch. Before deploying manually, check the AWS account, region and possible costs.
 
-Only deploy resources when required. Check the selected AWS account and enviroenment before running deployement commands.
+## Troubleshooting
 
-# Running Tests
+If a website is reported as `DOWN`, the following checks can help:
 
-To run the complete test suite, use:
+1. Check the monitoring Lambda logs in CloudWatch Logs.
+2. Check the website's CloudWatch metrics.
+3. Review the related CloudWatch alarm.
+4. Check the SNS notification.
+5. Check the `AlarmInformationTable` for the alarm record.
 
-python -m pytest -v
+## Known Limitations
 
-The tests cover Lambda behaviour, CRUD operations, API Gateway configuration, DynamoDB timing headers and integration with the deployed API.
+- The CRUD API is public and does not include authentication unless additional protection has been configured.
+- If alarms and dashboard graphs are configured for a fixed list of websites, newly added websites may not automatically receive their own alarms or dashboard graphs.
+- Integration test results depend on the deployed environment, configuration and AWS credentials.
 
-In the latest full test run, all 34 tests passed.
+## GitHub
 
-## Monitoring and Troubleshooting
-
-if a website is reported as DOWN
-
-check the website lambda in the AWS console
-check the lambda logs in CloudWatch logs.
-check the Website metrics in CloudWatch
-check the related CloudWatch alarm.
-check the SNS notification
-check the Dynamo table for the alarm record.
-
-## Git Version Control
-
-The project source code is managed using GitHub.
-
-Changes can be committed using:
-
-```bash
-git add .
-git commit -m "Update website monitoring project"
-git push
-```
+The project source code is maintained in GitHub. Changes can be committed and pushed using Git after the updated files have been checked and saved.
