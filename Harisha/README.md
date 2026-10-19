@@ -110,6 +110,8 @@ Testing is used to check that the application works as expected.
 - **Functional tests** check the application infrastructure and configuration.
 - **Integration tests** check interactions with the deployed API and AWS services.
 
+The project contains 34 automated tests: 18 unit tests, 11 functional tests and 5 integration tests. All 34 tests passed during verification.
+
 To run the unit and functional tests locally, use:
 
 ```bash
@@ -129,6 +131,8 @@ Integration tests need the correct configuration and AWS credentials. They may b
 The project uses AWS CodePipeline to automate testing and deployment. The pipeline includes Beta, Gamma and Prod stages.
 
 The pipeline runs the configured build and tests, creates the CloudFormation template, deploys each stage and runs integration tests after deployment. This helps identify problems before the application moves through the deployment stages.
+
+The CodePipeline deployment completed successfully, with all seven stages passing: Source, Build, UpdatePipeline, Assets, Beta, Gamma and Prod.
 
 ## Deployment
 
