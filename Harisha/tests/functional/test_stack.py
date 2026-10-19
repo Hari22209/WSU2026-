@@ -120,3 +120,6 @@ def test_crud_api_supports_put_and_delete_methods():
         "AWS::ApiGateway::Method",
         {"HttpMethod": "DELETE"}
     )
+
+        
+    
