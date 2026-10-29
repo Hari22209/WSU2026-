@@ -24,7 +24,7 @@ from constructs import Construct
 # Each person must click "Confirm subscription" in the AWS email.
 # To add more people, add another line inside the list.
 ALERT_EMAILS = [
-    "22099290@westernsydney.edu.au",
+    "22099290@student.westernsydney.edu.au",
 ]
 
 # Automatic rollback uses AWS CodeDeploy. CodeDeploy is not available on
