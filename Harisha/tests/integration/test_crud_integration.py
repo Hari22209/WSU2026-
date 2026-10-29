@@ -40,7 +40,7 @@ def real_table_item(website_id):
 
 
 def test_api_crud_cycle_and_dynamodb_latency():
-    status, item, _, write_headers = call("POST", "/websites", {"url": "https://example.com"})
+    status, item, _, write_headers = call("POST", "/websites", {"url": "https://www.python.org/"})
     assert status == 201
     wid = item["website_id"]
 
@@ -50,20 +50,20 @@ def test_api_crud_cycle_and_dynamodb_latency():
         # prove the API really saved it in the REAL DynamoDB table
         if TABLE:
             saved, read_ms = real_table_item(wid)
-            assert saved["url"] == "https://example.com"
+            assert saved["url"] == "https://www.python.org/"
             assert read_ms < 1000
 
         status, got, _, read_headers = call("GET", f"/websites/{wid}")
         assert status == 200
-        assert got["url"] == "https://example.com"
+        assert got["url"] == "https://www.python.org/"
         assert float(read_headers["X-DynamoDB-Read-Time-Ms"]) >= 0
 
-        status, updated, _, _ = call("PUT", f"/websites/{wid}", {"url": "https://example.org"})
+        status, updated, _, _ = call("PUT", f"/websites/{wid}", {"url": "https://docs.python.org/"})
         assert status == 200
-        assert updated["url"] == "https://example.org"
+        assert updated["url"] == "https://docs.python.org/"
 
         if TABLE:
-            assert real_table_item(wid)[0]["url"] == "https://example.org"
+            assert real_table_item(wid)[0]["url"] == "https://docs.python.org/"
     finally:
         call("DELETE", f"/websites/{wid}")
 

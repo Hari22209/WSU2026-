@@ -5,7 +5,7 @@ os.environ.setdefault("TABLE_NAME", "test-table")
 os.environ.setdefault("AWS_DEFAULT_REGION", "us-east-1")
 
 # Unit and functional tests must NEVER use my real AWS account, so they
-# use fake keys instead of ~/.aws/credentials and work on any computer.
+# use dummy test keys instead of ~/.aws/credentials and work on any computer.
 # Integration tests (API_URL is set) need the real AWS account, so they
 # keep the real credentials.
 if not os.environ.get("API_URL"):
@@ -36,6 +36,6 @@ def mock_targets_table():
     ONLY my Python logic. Real DynamoDB behaviour is tested in
     tests/functional/test_dynamodb.py (moto) and tests/integration (real AWS)."""
     import lambda_function
-    with patch.object(lambda_function, "table") as fake_table:
-        fake_table.scan.return_value = {"Items": SEED_TARGETS}
-        yield fake_table
+    with patch.object(lambda_function, "table") as mock_table:
+        mock_table.scan.return_value = {"Items": SEED_TARGETS}
+        yield mock_table

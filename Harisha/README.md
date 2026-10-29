@@ -256,7 +256,7 @@ python -m pytest -q tests/integration
 - **Least privilege:** each Lambda gets only the DynamoDB permission it needs (read, read/write or write).
 - **Secrets:** the GitHub token is stored in AWS Secrets Manager, never in the code.
 - **Input validation:** the API rejects invalid JSON, a missing `url` and URLs that are not `http(s)://` with a real host name (HTTP 400), and refuses duplicate URLs (HTTP 409).
-- **Tests never use real credentials:** unit and functional tests use fake AWS keys and mocked services.
+- **Tests never use real credentials:** unit and functional tests use dummy test keys, mocks and moto.
 
 ### Performance
 - DynamoDB on-demand mode gives single-digit-millisecond reads and writes with no capacity planning.
