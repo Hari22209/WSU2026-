@@ -1,3 +1,13 @@
+"""Tests for the CRUD Lambda (lambda/crud_lambda.py).
+
+UNIT tests use MagicMock in place of the DynamoDB table, so they check only
+my Python logic (status codes, headers, which DynamoDB call is made).
+
+FUNCTIONAL tests use moto, which behaves like the real DynamoDB API. They
+create a real-shaped table and run the CRUD calls against it, before
+anything is deployed. The real table is tested later by the integration
+tests in tests/integration.
+"""
 import json
 from unittest.mock import patch, MagicMock
 
@@ -6,6 +16,10 @@ import pytest
 from moto import mock_aws
 
 import crud_lambda
+
+WSU = "https://www.westernsydney.edu.au/"
+PYTHON = "https://www.python.org/"
+PYTHON_DOCS = "https://docs.python.org/"
 
 
 def event(method, body=None, website_id=None):
@@ -16,51 +30,67 @@ def event(method, body=None, website_id=None):
     }
 
 
-#  UNIT tests (mock: test only my Python logic)
+# UNIT tests (MagicMock: test only my Python logic)
 
 def test_create_website_returns_201_and_saves_item():
-    fake = MagicMock()
-    with patch.object(crud_lambda, "table", fake):
-        resp = crud_lambda.lambda_handler(
-            event("POST", {"url": "https://example.com"}), None)
+    mock_table = MagicMock()
+    mock_table.scan.return_value = {"Items": []}
+    with patch.object(crud_lambda, "table", mock_table):
+        resp = crud_lambda.lambda_handler(event("POST", {"url": WSU}), None)
     assert resp["statusCode"] == 201
-    saved = fake.put_item.call_args.kwargs["Item"]
-    assert saved["url"] == "https://example.com"
+    saved = mock_table.put_item.call_args.kwargs["Item"]
+    assert saved["url"] == WSU
     assert saved["website_id"]
 
 
 def test_create_website_without_url_returns_400():
-    fake = MagicMock()
-    with patch.object(crud_lambda, "table", fake):
+    mock_table = MagicMock()
+    with patch.object(crud_lambda, "table", mock_table):
         resp = crud_lambda.lambda_handler(event("POST", {}), None)
     assert resp["statusCode"] == 400
-    fake.put_item.assert_not_called()
+    mock_table.put_item.assert_not_called()
 
 
 def test_create_website_returns_dynamodb_write_time_header():
-    fake = MagicMock()
-    with patch.object(crud_lambda, "table", fake):
-        resp = crud_lambda.lambda_handler(
-            event("POST", {"url": "https://example.com"}), None)
+    mock_table = MagicMock()
+    mock_table.scan.return_value = {"Items": []}
+    with patch.object(crud_lambda, "table", mock_table):
+        resp = crud_lambda.lambda_handler(event("POST", {"url": WSU}), None)
     assert resp["statusCode"] == 201
     assert "X-DynamoDB-Write-Time-Ms" in resp["headers"]
     assert float(resp["headers"]["X-DynamoDB-Write-Time-Ms"]) >= 0
 
 
 def test_get_website_returns_dynamodb_read_time_header():
-    fake = MagicMock()
-    fake.get_item.return_value = {
-        "Item": {"website_id": "test-123", "url": "https://example.com"}
-    }
-    with patch.object(crud_lambda, "table", fake):
-        resp = crud_lambda.lambda_handler(
-            event("GET", website_id="test-123"), None)
+    mock_table = MagicMock()
+    mock_table.get_item.return_value = {"Item": {"website_id": "1", "url": WSU}}
+    with patch.object(crud_lambda, "table", mock_table):
+        resp = crud_lambda.lambda_handler(event("GET", website_id="1"), None)
     assert resp["statusCode"] == 200
     assert "X-DynamoDB-Read-Time-Ms" in resp["headers"]
     assert float(resp["headers"]["X-DynamoDB-Read-Time-Ms"]) >= 0
 
 
-#  FUNCTIONAL test (moto = behaves like real DynamoDB) 
+def test_create_rejects_invalid_url():
+    mock_table = MagicMock()
+    with patch.object(crud_lambda, "table", mock_table):
+        resp = crud_lambda.lambda_handler(event("POST", {"url": "not a website"}), None)
+    assert resp["statusCode"] == 400
+    assert json.loads(resp["body"])["error"] == "Invalid website URL"
+    mock_table.put_item.assert_not_called()
+
+
+def test_update_rejects_invalid_url():
+    mock_table = MagicMock()
+    with patch.object(crud_lambda, "table", mock_table):
+        resp = crud_lambda.lambda_handler(
+            event("PUT", {"url": "westernsydney"}, website_id="1"), None)
+    assert resp["statusCode"] == 400
+    assert json.loads(resp["body"])["error"] == "Invalid website URL"
+    mock_table.update_item.assert_not_called()
+
+
+# FUNCTIONAL tests (moto: behaves like real DynamoDB)
 
 @pytest.fixture
 def dynamodb_table(monkeypatch):
@@ -81,22 +111,22 @@ def test_crud_lifecycle_with_dynamodb(dynamodb_table):
     h = crud_lambda.lambda_handler
 
     # CREATE -> really stored in the table
-    created = h(event("POST", {"url": "https://a.com"}), None)
+    created = h(event("POST", {"url": PYTHON}), None)
     assert created["statusCode"] == 201
     wid = json.loads(created["body"])["website_id"]
-    assert dynamodb_table.get_item(Key={"website_id": wid})["Item"]["url"] == "https://a.com"
+    assert dynamodb_table.get_item(Key={"website_id": wid})["Item"]["url"] == PYTHON
 
     # READ one and READ all
     got = h(event("GET", website_id=wid), None)
     assert got["statusCode"] == 200
-    assert json.loads(got["body"])["url"] == "https://a.com"
+    assert json.loads(got["body"])["url"] == PYTHON
     listing = json.loads(h(event("GET"), None)["body"])
     assert len(listing["websites"]) == 1
 
     # UPDATE -> table has the new url
-    updated = h(event("PUT", {"url": "https://b.com"}, website_id=wid), None)
+    updated = h(event("PUT", {"url": PYTHON_DOCS}, website_id=wid), None)
     assert updated["statusCode"] == 200
-    assert dynamodb_table.get_item(Key={"website_id": wid})["Item"]["url"] == "https://b.com"
+    assert dynamodb_table.get_item(Key={"website_id": wid})["Item"]["url"] == PYTHON_DOCS
 
     # DELETE -> gone from the table
     assert h(event("DELETE", website_id=wid), None)["statusCode"] == 200
@@ -104,39 +134,15 @@ def test_crud_lifecycle_with_dynamodb(dynamodb_table):
     assert h(event("GET", website_id=wid), None)["statusCode"] == 404
 
     # website that does not exist -> 404
-    assert h(event("PUT", {"url": "https://c.com"}, website_id="nope"), None)["statusCode"] == 404
-    assert h(event("DELETE", website_id="nope"), None)["statusCode"] == 404
-
-def test_create_rejects_invalid_url():
-    fake = MagicMock()
-
-    with patch.object(crud_lambda, "table", fake):
-        result = crud_lambda.lambda_handler(
-            event("POST", {"url": "not-a-valid-url"}), None
-        )
-
-    assert result["statusCode"] == 400
-    fake.put_item.assert_not_called()
-
-
-def test_update_rejects_invalid_url():
-    fake = MagicMock()
-
-    with patch.object(crud_lambda, "table", fake):
-        result = crud_lambda.lambda_handler(
-            event("PUT", {"url": "invalid-url"}, website_id="test-123"),
-            None
-        )
-
-    assert result["statusCode"] == 400
-    fake.update_item.assert_not_called()
+    assert h(event("PUT", {"url": WSU}, website_id="99"), None)["statusCode"] == 404
+    assert h(event("DELETE", website_id="99"), None)["statusCode"] == 404
 
 
 def test_duplicate_website_returns_409(dynamodb_table):
-    handler = crud_lambda.lambda_handler
+    h = crud_lambda.lambda_handler
 
-    first = handler(event("POST", {"url": "https://duplicate.com"}), None)
-    second = handler(event("POST", {"url": "https://duplicate.com"}), None)
+    first = h(event("POST", {"url": WSU}), None)
+    second = h(event("POST", {"url": WSU}), None)
 
     assert first["statusCode"] == 201
     assert second["statusCode"] == 409
@@ -144,20 +150,13 @@ def test_duplicate_website_returns_409(dynamodb_table):
 
 
 def test_update_to_existing_url_returns_409(dynamodb_table):
-    handler = crud_lambda.lambda_handler
+    h = crud_lambda.lambda_handler
 
-    first = handler(event("POST", {"url": "https://first.com"}), None)
-    second = handler(event("POST", {"url": "https://second.com"}), None)
-
-    first_id = json.loads(first["body"])["website_id"]
+    h(event("POST", {"url": WSU}), None)
+    second = h(event("POST", {"url": PYTHON}), None)
     second_id = json.loads(second["body"])["website_id"]
 
-    result = handler(
-        event("PUT", {"url": "https://first.com"}, website_id=second_id),
-        None
-    )
+    result = h(event("PUT", {"url": WSU}, website_id=second_id), None)
 
     assert result["statusCode"] == 409
-    assert dynamodb_table.get_item(
-        Key={"website_id": second_id}
-    )["Item"]["url"] == "https://second.com"
+    assert dynamodb_table.get_item(Key={"website_id": second_id})["Item"]["url"] == PYTHON
