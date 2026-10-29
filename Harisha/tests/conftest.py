@@ -2,7 +2,7 @@ import os
 import sys
 
 os.environ.setdefault("TABLE_NAME", "test-table")
-os.environ["AWS_DEFAULT_REGION"] = "us-east-1"
+os.environ.setdefault("AWS_DEFAULT_REGION", "us-east-1")
 
 # Unit and functional tests must NEVER use my real AWS account, so they
 # use fake keys instead of ~/.aws/credentials and work on any computer.
