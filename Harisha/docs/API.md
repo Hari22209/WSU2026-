@@ -23,24 +23,20 @@ API=https://wnq06hjc72.execute-api.ap-southeast-2.amazonaws.com/prod
 
 ## Quick reference
 
-| # | Route | Purpose |
-|---|-------|---------|
-| 1 | `GET /websites` | See the whole monitoring list |
-| 2 | `POST /websites` | Put a new website on the list |
-| 3 | `GET /websites/{website_id}` | Look at one website |
-| 4 | `PUT /websites/{website_id}` | Point an existing entry at a new URL |
-| 5 | `DELETE /websites/{website_id}` | Take a website off the list |
+1. `GET /websites` – see the whole monitoring list
+2. `POST /websites` – put a new website on the list
+3. `GET /websites/{website_id}` – look at one website
+4. `PUT /websites/{website_id}` – point an existing entry at a new URL
+5. `DELETE /websites/{website_id}` – take a website off the list
 
 ---
 
 ## 1. `GET /websites`
 
-| | |
-|---|---|
-| Body | none |
-| Success | `200` |
-| DynamoDB call | `scan` |
-| Checked by | `test_crud_lifecycle_with_dynamodb`, smoke tests |
+- **Body:** none
+- **Success:** `200`
+- **DynamoDB call:** `scan`
+- **Checked by:** `test_crud_lifecycle_with_dynamodb`, smoke tests
 
 ```bash
 curl $API/websites
@@ -58,14 +54,12 @@ curl $API/websites
 
 ## 2. `POST /websites`
 
-| | |
-|---|---|
-| Body | `{"url": "<address>"}` – `url` is required |
-| Success | `201` – returns the new item with its generated `website_id` |
-| Extra header | `X-DynamoDB-Write-Time-Ms` – duration of the `put_item` call |
-| DynamoDB calls | `scan` (duplicate check), then `put_item` |
-| Fails with | `400` if the body is not JSON, has no `url` or the URL is badly formed; `409` if that URL is already in the list |
-| Checked by | `test_create_website_returns_201_and_saves_item`, `test_create_rejects_invalid_url`, `test_duplicate_website_returns_409`, `test_api_crud_cycle_and_dynamodb_latency` |
+- **Body:** `{"url": "<address>"}` – `url` is required
+- **Success:** `201` – returns the new item with its generated `website_id`
+- **Extra header:** `X-DynamoDB-Write-Time-Ms` – duration of the `put_item` call
+- **DynamoDB calls:** `scan` (duplicate check), then `put_item`
+- **Fails with:** `400` if the body is not JSON, has no `url` or the URL is badly formed; `409` if that URL is already in the list
+- **Checked by:** `test_create_website_returns_201_and_saves_item`, `test_create_rejects_invalid_url`, `test_duplicate_website_returns_409`, `test_api_crud_cycle_and_dynamodb_latency`
 
 ```bash
 curl -i -X POST $API/websites -d '{"url": "https://www.python.org/"}'
@@ -79,14 +73,12 @@ Because the crawler reads the table every 30 minutes, the new site is included f
 
 ## 3. `GET /websites/{website_id}`
 
-| | |
-|---|---|
-| Body | none |
-| Success | `200` – returns the item |
-| Extra header | `X-DynamoDB-Read-Time-Ms` – duration of the `get_item` call |
-| DynamoDB call | `get_item` |
-| Fails with | `404` if no item has that ID |
-| Checked by | `test_get_website_returns_dynamodb_read_time_header`, `test_read_missing_website_returns_404` |
+- **Body:** none
+- **Success:** `200` – returns the item
+- **Extra header:** `X-DynamoDB-Read-Time-Ms` – duration of the `get_item` call
+- **DynamoDB call:** `get_item`
+- **Fails with:** `404` if no item has that ID
+- **Checked by:** `test_get_website_returns_dynamodb_read_time_header`, `test_read_missing_website_returns_404`
 
 ```bash
 curl -i $API/websites/2
@@ -98,13 +90,11 @@ curl -i $API/websites/2
 
 ## 4. `PUT /websites/{website_id}`
 
-| | |
-|---|---|
-| Body | `{"url": "<new address>"}` – `url` is required |
-| Success | `200` – returns the updated item (same `website_id`) |
-| DynamoDB calls | `scan` (duplicate check), `get_item` to confirm it exists, then `update_item` |
-| Fails with | `400` (bad JSON / no `url` / badly formed URL), `404` (unknown ID), `409` (another entry already has that URL) |
-| Checked by | `test_crud_lifecycle_with_dynamodb`, `test_update_rejects_invalid_url`, `test_update_to_existing_url_returns_409` |
+- **Body:** `{"url": "<new address>"}` – `url` is required
+- **Success:** `200` – returns the updated item (same `website_id`)
+- **DynamoDB calls:** `scan` (duplicate check), `get_item` to confirm it exists, then `update_item`
+- **Fails with:** `400` (bad JSON / no `url` / badly formed URL), `404` (unknown ID), `409` (another entry already has that URL)
+- **Checked by:** `test_crud_lifecycle_with_dynamodb`, `test_update_rejects_invalid_url`, `test_update_to_existing_url_returns_409`
 
 ```bash
 curl -X PUT $API/websites/<website_id> -d '{"url": "https://docs.python.org/"}'
@@ -116,13 +106,11 @@ curl -X PUT $API/websites/<website_id> -d '{"url": "https://docs.python.org/"}'
 
 ## 5. `DELETE /websites/{website_id}`
 
-| | |
-|---|---|
-| Body | none |
-| Success | `200` – returns the item that was removed |
-| DynamoDB call | `delete_item` with `ReturnValues="ALL_OLD"` – if nothing comes back, the ID did not exist |
-| Fails with | `404` if no item has that ID |
-| Checked by | `test_crud_lifecycle_with_dynamodb`, `test_api_crud_cycle_and_dynamodb_latency` |
+- **Body:** none
+- **Success:** `200` – returns the item that was removed
+- **DynamoDB call:** `delete_item` with `ReturnValues="ALL_OLD"` – if nothing comes back, the ID did not exist
+- **Fails with:** `404` if no item has that ID
+- **Checked by:** `test_crud_lifecycle_with_dynamodb`, `test_api_crud_cycle_and_dynamodb_latency`
 
 ```bash
 curl -X DELETE $API/websites/<website_id>
@@ -141,14 +129,12 @@ curl -X DELETE $API/websites/<website_id>
 
 When something goes wrong, the body contains a single `error` field explaining the problem, for example `{"error": "Website not found"}`.
 
-| Code | Returned by | Meaning |
-|------|-------------|---------|
-| `200` | GET, PUT, DELETE | Done |
-| `201` | POST | New website stored |
-| `400` | POST, PUT, DELETE | `Invalid JSON`, `url is required`, `Invalid website URL` or `website_id is required` |
-| `404` | GET one, PUT, DELETE | `Website not found` |
-| `409` | POST, PUT | `Website URL already exists` |
-| `405` | anything else | `Method not allowed` |
+- `200` (GET, PUT, DELETE) – done
+- `201` (POST) – new website stored
+- `400` (POST, PUT, DELETE) – `Invalid JSON`, `url is required`, `Invalid website URL` or `website_id is required`
+- `404` (GET one, PUT, DELETE) – `Website not found`
+- `409` (POST, PUT) – `Website URL already exists`
+- `405` (anything else) – `Method not allowed`
 
 ## Good to know
 
