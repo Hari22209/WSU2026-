@@ -106,3 +106,58 @@ def test_crud_lifecycle_with_dynamodb(dynamodb_table):
     # website that does not exist -> 404
     assert h(event("PUT", {"url": "https://c.com"}, website_id="nope"), None)["statusCode"] == 404
     assert h(event("DELETE", website_id="nope"), None)["statusCode"] == 404
+
+def test_create_rejects_invalid_url():
+    fake = MagicMock()
+
+    with patch.object(crud_lambda, "table", fake):
+        result = crud_lambda.lambda_handler(
+            event("POST", {"url": "not-a-valid-url"}), None
+        )
+
+    assert result["statusCode"] == 400
+    fake.put_item.assert_not_called()
+
+
+def test_update_rejects_invalid_url():
+    fake = MagicMock()
+
+    with patch.object(crud_lambda, "table", fake):
+        result = crud_lambda.lambda_handler(
+            event("PUT", {"url": "invalid-url"}, website_id="test-123"),
+            None
+        )
+
+    assert result["statusCode"] == 400
+    fake.update_item.assert_not_called()
+
+
+def test_duplicate_website_returns_409(dynamodb_table):
+    handler = crud_lambda.lambda_handler
+
+    first = handler(event("POST", {"url": "https://duplicate.com"}), None)
+    second = handler(event("POST", {"url": "https://duplicate.com"}), None)
+
+    assert first["statusCode"] == 201
+    assert second["statusCode"] == 409
+    assert len(dynamodb_table.scan()["Items"]) == 1
+
+
+def test_update_to_existing_url_returns_409(dynamodb_table):
+    handler = crud_lambda.lambda_handler
+
+    first = handler(event("POST", {"url": "https://first.com"}), None)
+    second = handler(event("POST", {"url": "https://second.com"}), None)
+
+    first_id = json.loads(first["body"])["website_id"]
+    second_id = json.loads(second["body"])["website_id"]
+
+    result = handler(
+        event("PUT", {"url": "https://first.com"}, website_id=second_id),
+        None
+    )
+
+    assert result["statusCode"] == 409
+    assert dynamodb_table.get_item(
+        Key={"website_id": second_id}
+    )["Item"]["url"] == "https://second.com"

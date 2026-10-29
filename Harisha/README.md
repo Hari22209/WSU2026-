@@ -8,7 +8,7 @@ The list of websites to monitor (the **target list**) is stored in **Amazon Dyna
 
 Amazon EventBridge runs the monitoring Lambda every 30 minutes. The Lambda reads the target list from DynamoDB, checks each website and publishes the results to Amazon CloudWatch. When a website is down or slow, a CloudWatch alarm notifies Amazon SNS, which emails the team and triggers a Lambda that saves the alarm in a second DynamoDB table.
 
-The application is deployed by a CI/CD pipeline (AWS CodePipeline) through **Beta**, **Gamma** and **Prod** stages, with automated tests blocking each stage and **automatic rollback** if the crawler becomes unhealthy.
+The application is deployed by a CI/CD pipeline (AWS CodePipeline) through **Alpha**, **Beta**, **Gamma** and **Prod** stages, with automated tests blocking each stage and a manual approval before production.
 
 ## Contents
 
@@ -26,7 +26,10 @@ The application is deployed by a CI/CD pipeline (AWS CodePipeline) through **Bet
 12. [Project structure](#project-structure)
 13. [Setup and deployment](#setup-and-deployment)
 14. [Troubleshooting](#troubleshooting)
-15. [Known limitations](#known-limitations)
+15. [My implementation choices](#my-implementation-choices)
+16. [Issues I fixed during deployment](#issues-i-fixed-during-deployment)
+17. [Known limitations](#known-limitations)
+18. [Removing the deployment](#removing-the-deployment)
 
 ## Architecture
 
@@ -41,7 +44,7 @@ How the application works, step by step:
 7. When an alarm fires, it sends a message to **SNS**.
 8. SNS **emails** the team and triggers the **alarm logger Lambda**, which saves the alarm in **DynamoDB (AlarmInformationTable)**.
 9. If the WebHealth Lambda becomes unhealthy after a new deployment, **CodeDeploy** rolls it back to the last working version.
-10. Code changes pushed to **GitHub** go through **CodePipeline**: Source, Build (unit and functional tests), UpdatePipeline, Assets, then the **Beta**, **Gamma** and **Prod** stages, each followed by integration tests.
+10. Code changes pushed to **GitHub** go through **CodePipeline**: Source, Build (unit and functional tests), UpdatePipeline, Assets, then **Alpha** (smoke tests), **Beta** and **Gamma** (integration tests), a manual approval, and **Prod**.
 
 ## AWS services used
 
@@ -53,8 +56,8 @@ How the application works, step by step:
 | Amazon EventBridge | Runs the monitoring Lambda every 30 minutes |
 | Amazon CloudWatch | Metrics, alarms, dashboard and Lambda Insights (memory) |
 | Amazon SNS | Sends alarm notifications by email and to the alarm logger |
-| AWS CodeDeploy | Canary deployment and automatic rollback of the monitoring Lambda |
-| AWS CodePipeline and CodeBuild | Build, test and deploy through Beta, Gamma and Prod |
+| AWS CodeDeploy | Canary deployment and automatic rollback of the monitoring Lambda (switched off on the Free plan) |
+| AWS CodePipeline and CodeBuild | Build, test and deploy through Alpha, Beta, Gamma and Prod |
 | AWS Secrets Manager | Stores the GitHub token used by the pipeline |
 | AWS IAM | Least-privilege permissions for each Lambda |
 | AWS CloudFormation and CDK | Infrastructure as code |
@@ -70,7 +73,7 @@ The project uses **two DynamoDB tables**, both created in `harisha/harisha_stack
 | `website_id` | String (**partition key**) | Unique ID of the website |
 | `url` | String | Website address to monitor |
 
-- **Seeded on deployment:** when the stack is first deployed, an `AwsCustomResource` calls DynamoDB `BatchWriteItem` to place the default target list (Western Sydney University, Google, Amazon) in the table, so the table is never empty.
+- **Seeded on deployment:** the starting target list is kept in `lambda/targets.json`. When the stack is first deployed, an `AwsCustomResource` calls DynamoDB `BatchWriteItem` to place those websites (Western Sydney University, Google, Amazon) in the table, so the table is never empty. To change the starting websites, edit the JSON file only.
 - **Written by:** the CRUD Lambda (`put_item`, `update_item`, `delete_item`).
 - **Read by:** the CRUD Lambda (`get_item`, `scan`) and the monitoring Lambda (`scan`, with pagination using `LastEvaluatedKey`).
 
@@ -108,7 +111,7 @@ Base URL: the `WebHealthApiUrl` output of the stack. Full details are in [`docs/
 | PUT | `/websites/{website_id}` | Update a website URL | `200 OK` |
 | DELETE | `/websites/{website_id}` | Remove a website | `200 OK` |
 
-Errors: `400` for invalid JSON or a missing `url`, `404` when the website does not exist, `405` for an unsupported method.
+Errors: `400` for invalid JSON, a missing `url` or a badly formed URL, `404` when the website does not exist, `409` when the URL is already in the list, `405` for an unsupported method.
 
 Example:
 
@@ -195,35 +198,44 @@ All four notify SNS.
 - When new code is deployed, **CodeDeploy** (`LambdaDeploymentGroup`) sends **10% of invocations to the new version for 5 minutes** (canary).
 - If the errors, duration or memory alarm fires during that time, CodeDeploy **rolls the alias back to the last working version** automatically.
 
+> **Note:** CodeDeploy is not available on the AWS Free plan, so in this account the deployment group is switched off with `ENABLE_CODEDEPLOY_ROLLBACK = False` in `harisha/harisha_stack.py`. The alias, the alarms and the rollback code are all still in place; setting the switch to `True` on a paid account turns rollback on. A test checks both settings.
+
 ## CI/CD pipeline
 
-Defined in `harisha/pipeline_stack.py` using CDK Pipelines.
+Defined in `harisha/pipeline_stack.py` using CDK Pipelines. Alpha, Beta, Gamma and Prod are independent: every stage gets its own DynamoDB tables, Lambda functions and API endpoint, so testing one never touches another.
 
 1. **Source** – pulls the code from GitHub (token stored in Secrets Manager as `github-token`).
-2. **Build** – installs dependencies, runs the **unit and functional tests** (a failure stops the pipeline), then runs `cdk synth`.
+2. **Build** – installs dependencies, runs all **unit and functional tests** (a failure stops the pipeline), then runs `cdk synth`.
 3. **UpdatePipeline** – the pipeline updates itself if its own code changed.
 4. **Assets** – uploads the Lambda code.
-5. **Beta → Gamma → Prod** – each stage deploys its own copy of the application, then runs the **integration tests** against that copy. A failed test stops the next stage from deploying.
+5. **Alpha** – deploys, then runs the **smoke tests** (`tests/smoke`): the API answers and the target list is in DynamoDB.
+6. **Beta** – deploys, then runs the **integration tests** against the real AWS resources.
+7. **Gamma** – deploys, then runs the integration tests again.
+8. **Prod** – waits for the manual approval **`ReleaseToProduction`**, then deploys and runs the integration tests.
+
+A failed test in any stage stops the next stage from deploying.
 
 ## Testing
 
 | Level | File | What it tests | Count |
 |---|---|---|---|
 | Unit | `tests/test_unit.py` | Monitoring Lambda logic: UP/DOWN status, status codes, response time, metrics published (CloudWatch and table mocked) | 12 |
-| Unit | `tests/test_crud.py` | CRUD logic: create returns 201 and saves the item, missing URL returns 400 without touching DynamoDB, read/write time headers (table mocked) | 4 |
-| Functional | `tests/test_crud.py` | Full CRUD lifecycle against a DynamoDB table (moto): item really created, read, updated and deleted; 404 for missing items | 1 |
+| Unit | `tests/test_crud.py` | CRUD logic: create returns 201 and saves the item, missing or badly formed URL returns 400 without touching DynamoDB, read/write time headers (table mocked) | 6 |
+| Functional | `tests/test_crud.py` | Against a DynamoDB table (moto): full CRUD lifecycle with 404 for missing items, and 409 when a POST or PUT would duplicate an existing URL | 3 |
 | Functional | `tests/functional/test_dynamodb.py` | Monitoring Lambda reads the target list from DynamoDB; alarm logger saves alarms to DynamoDB (moto) | 2 |
 | Functional | `tests/functional/test_stack.py` | The CloudFormation template: 3 Lambdas, 2 tables, seeding, schedule, SNS and emails, 10 alarms, dashboard, API routes, rollback, memory alarm | 15 |
 | Integration | `tests/integration/test_crud_integration.py` | Deployed API: CRUD cycle checked **directly in the real DynamoDB table** with read time under 1 s; 400 and 404 errors | 3 |
 | Integration | `tests/integration/test_integration.py` | Deployed monitoring Lambda checks all websites; metrics reach CloudWatch | 2 |
+| Smoke | `tests/smoke/test_smoke.py` | Alpha stage: the deployed API answers, and every website in `targets.json` is in DynamoDB | 2 |
 
-**Total: 39 tests** (16 unit, 18 functional, 5 integration).
+**Total: 45 tests** (18 unit, 20 functional, 5 integration, 2 smoke).
 
 ### Why three levels of DynamoDB testing?
 
 - **Unit tests** use a mock, so they test only the Python logic, for example that a missing URL is rejected before DynamoDB is called.
 - **Functional tests** use **moto**, a library that behaves like the real DynamoDB API. They run in the Build stage, **before** anything is deployed, so the real table does not exist yet. They are fast, free and leave no test data behind.
-- **Integration tests** run **after** each stage deploys and use the **real** DynamoDB table, proving that API Gateway, Lambda and DynamoDB work together.
+- **Integration tests** run **after** Beta, Gamma and Prod deploy and use the **real** DynamoDB table, proving that API Gateway, Lambda and DynamoDB work together.
+- **Smoke tests** run in Alpha as a quick first check that the new stage is alive.
 
 ### Running the tests
 
@@ -243,7 +255,7 @@ python -m pytest -q tests/integration
 ### Security
 - **Least privilege:** each Lambda gets only the DynamoDB permission it needs (read, read/write or write).
 - **Secrets:** the GitHub token is stored in AWS Secrets Manager, never in the code.
-- **Input validation:** the API rejects invalid JSON and requests without a `url` (HTTP 400).
+- **Input validation:** the API rejects invalid JSON, a missing `url` and URLs that are not `http(s)://` with a real host name (HTTP 400), and refuses duplicate URLs (HTTP 409).
 - **Tests never use real credentials:** unit and functional tests use fake AWS keys and mocked services.
 
 ### Performance
@@ -253,7 +265,8 @@ python -m pytest -q tests/integration
 - Crawler run duration and memory are monitored with alarms.
 
 ### Reliability
-- **Automatic rollback** of the monitoring Lambda if errors, duration or memory alarms fire after a deployment.
+- **Automatic rollback** of the monitoring Lambda if errors, duration or memory alarms fire after a deployment (available on a paid account – see the note above).
+- **Manual approval** before Prod, so a person checks the release first.
 - **Test blockers** in the pipeline: broken code never reaches the next stage.
 - An alarm fires if the crawler stops running.
 - Metrics are published outside the error handling, so a CloudWatch failure is never misreported as a website outage.
@@ -274,11 +287,12 @@ python -m pytest -q tests/integration
 |---|---|
 | `app.py` | CDK entry point; creates the pipeline stack |
 | `harisha/harisha_stack.py` | All application resources: DynamoDB, Lambdas, API Gateway, CloudWatch, SNS, CodeDeploy |
-| `harisha/pipeline_stack.py` | CI/CD pipeline with Beta, Gamma and Prod stages |
+| `harisha/pipeline_stack.py` | CI/CD pipeline with Alpha, Beta, Gamma and Prod stages |
 | `lambda/lambda_function.py` | Monitoring (web crawler) Lambda |
 | `lambda/crud_lambda.py` | CRUD API Lambda |
 | `lambda/database_logger.py` | Alarm logger Lambda |
-| `tests/` | Unit, functional and integration tests |
+| `lambda/targets.json` | Starting target list, seeded into DynamoDB on deploy |
+| `tests/` | Unit, functional, integration and smoke tests |
 | `docs/API.md` | API documentation |
 
 ## Setup and deployment
@@ -314,9 +328,34 @@ If a deployment was rolled back: open CodeDeploy, find the stopped deployment, a
 
 If a pipeline stage fails: open the failed action in CodePipeline and read the CodeBuild log.
 
+## My implementation choices
+
+- **Seeding with `BatchWriteItem` directly:** the target list is written into DynamoDB by CDK during deployment, instead of calling a Lambda. This needs fewer moving parts and fewer permissions.
+- **`website_id` as the partition key:** each website has a stable ID, so its URL can be changed with `PUT` without creating a new item.
+- **Rollback on the crawler:** CodeDeploy watches the crawler's errors, run duration and memory, which are the operational metrics the crawler must keep healthy.
+- **Duplicate check in code:** the key is `website_id`, not the URL, so DynamoDB cannot reject a repeated address by itself. `website_url_exists` scans the table first and the API returns `409` (on `PUT` it skips the entry's own ID).
+- **A single handler for the API:** all five routes reach `crud_lambda.lambda_handler`, which picks the right function from the HTTP method. Keeping them together means input checks and error responses are written once.
+- **Separate test levels:** mocks for logic, moto before deployment, real AWS after deployment, and a quick smoke test in Alpha.
+
+## Issues I fixed during deployment
+
+1. **CodeDeploy blocked on the Free plan.** The first Beta deployment failed with *"needs a subscription for the service (CodeDeploy)"*. I added the `ENABLE_CODEDEPLOY_ROLLBACK` switch so the stack deploys without the deployment group on this account.
+2. **Integration tests looked in the wrong region.** Three integration tests failed in Beta because `tests/conftest.py` forced the region to `us-east-1` while the stacks were in `ap-southeast-2`. I changed it to `os.environ.setdefault(...)`, so the pipeline's own region is used. After the fix, all stages passed.
+
 ## Known limitations
 
 - The CRUD API is public and has no authentication.
-- Alarms and dashboard graphs are created for the websites in `TARGET_WEBSITES`. Websites added later through the API are monitored and get metrics, but do not get their own alarm until they are added to `TARGET_WEBSITES` and redeployed.
+- Alarms and dashboard graphs are created for the websites in `lambda/targets.json`. Websites added later through the API are monitored and get metrics, but do not get their own alarm until they are added to `targets.json` and redeployed.
 - `scan` reads the whole table. This is fine for a small target list; a very large list would need a different design.
 - Integration tests need a deployed stage and AWS credentials.
+
+## Removing the deployment
+
+Each stage is its own CloudFormation stack, so remove them from last to first, then remove the pipeline:
+
+```bash
+for stage in Prod Gamma Beta Alpha; do
+  aws cloudformation delete-stack --stack-name $stage-HarishaStack --region ap-southeast-2
+done
+npx cdk destroy PipelineStack
+```

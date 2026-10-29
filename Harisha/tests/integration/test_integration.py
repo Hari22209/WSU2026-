@@ -37,10 +37,18 @@ def api(method, path, body=None):
 
 @pytest.fixture
 def seeded_sites():
-    ids = [api("POST", "/websites", {"url": u})["website_id"] for u in SITES]
+    """The target list is seeded into DynamoDB on deploy, so these sites are
+    usually there already. Only add the missing ones (the API now rejects
+    duplicate URLs with 409), and afterwards remove only what this test added."""
+    existing = {w["url"] for w in api("GET", "/websites")["websites"]}
+    added_ids = [
+        api("POST", "/websites", {"url": u})["website_id"]
+        for u in SITES
+        if u not in existing
+    ]
     yield SITES
-    for i in ids:
-        api("DELETE", f"/websites/{i}")
+    for website_id in added_ids:
+        api("DELETE", f"/websites/{website_id}")
 
 
 def invoke():

@@ -1,167 +1,158 @@
-# Website Target Management API
+# WebHealth Websites API
 
-## Overview
+This document describes the HTTP interface of the WebHealth project. Users call it to add, view, change or remove the websites in the monitoring list. API Gateway passes each call to the CRUD Lambda (`lambda/crud_lambda.py`), and the list itself lives in the DynamoDB table **TargetWebsiteTable**.
 
-The Website Target Management API allows users to create, read, update and delete website targets for the WebHealth monitoring project.
+## Finding the API address
 
-The API uses Amazon API Gateway, AWS Lambda with Python, and Amazon DynamoDB.
+Alpha, Beta, Gamma and Prod are deployed separately, so every stage gets a different address. You can find it under **CloudFormation → `Prod-HarishaStack` → Outputs → `WebHealthApiUrl`**, or from the terminal:
 
-## Base URL
-
-Use the deployed API Gateway invoke URL for your environment (for example, Beta).
-
-```text
-https://YOUR_API_ID.execute-api.YOUR_REGION.amazonaws.com/YOUR_STAGE
+```bash
+aws cloudformation describe-stacks --stack-name Prod-HarishaStack --region ap-southeast-2 \
+  --query "Stacks[0].Outputs[?OutputKey=='WebHealthApiUrl'].OutputValue" --output text
 ```
 
-Replace the example URL with the actual API Gateway invoke URL.
+Prod address used in the examples below:
 
-## Endpoints
-
-| Method | Path | Description |
-|---|---|---|
-| POST | `/websites` | Create a website target |
-| GET | `/websites` | List website targets |
-| GET | `/websites/{website_id}` | Get one website target |
-| PUT | `/websites/{website_id}` | Update a website target |
-| DELETE | `/websites/{website_id}` | Delete a website target |
-
-## Create a website
-
-**Request**
-
-```http
-POST /websites
-Content-Type: application/json
+```bash
+API=https://wnq06hjc72.execute-api.ap-southeast-2.amazonaws.com/prod
 ```
 
-```json
-{
-  "url": "https://example.com"
-}
+- Open to anyone: there is no login or API key.
+- Send JSON in, get JSON back.
+- `website_id` (the DynamoDB partition key) picks out one website.
+
+## Quick reference
+
+| # | Route | Purpose |
+|---|-------|---------|
+| 1 | `GET /websites` | See the whole monitoring list |
+| 2 | `POST /websites` | Put a new website on the list |
+| 3 | `GET /websites/{website_id}` | Look at one website |
+| 4 | `PUT /websites/{website_id}` | Point an existing entry at a new URL |
+| 5 | `DELETE /websites/{website_id}` | Take a website off the list |
+
+---
+
+## 1. `GET /websites`
+
+| | |
+|---|---|
+| Body | none |
+| Success | `200` |
+| DynamoDB call | `scan` |
+| Checked by | `test_crud_lifecycle_with_dynamodb`, smoke tests |
+
+```bash
+curl $API/websites
 ```
-
-**Success:** `201 Created`
-
-```json
-{
-  "website_id": "generated-uuid",
-  "url": "https://example.com"
-}
-```
-
-The response includes the `X-DynamoDB-Write-Time-Ms` header, which measures the time around the DynamoDB write call in milliseconds.
-
-Possible errors include `400 Bad Request` when the JSON is invalid or `url` is missing.
-
-## List websites
-
-**Request**
-
-```http
-GET /websites
-```
-
-**Success:** `200 OK`
 
 ```json
 {
   "websites": [
-    {
-      "website_id": "generated-uuid",
-      "url": "https://example.com"
-    }
+    {"website_id": "1", "url": "https://www.westernsydney.edu.au/"},
+    {"website_id": "2", "url": "https://www.google.com/"},
+    {"website_id": "3", "url": "https://www.amazon.com/"}
   ]
 }
 ```
 
-An empty list is returned if there are no saved website targets.
+## 2. `POST /websites`
 
-## Get one website
+| | |
+|---|---|
+| Body | `{"url": "<address>"}` – `url` is required |
+| Success | `201` – returns the new item with its generated `website_id` |
+| Extra header | `X-DynamoDB-Write-Time-Ms` – duration of the `put_item` call |
+| DynamoDB calls | `scan` (duplicate check), then `put_item` |
+| Fails with | `400` if the body is not JSON, has no `url` or the URL is badly formed; `409` if that URL is already in the list |
+| Checked by | `test_create_website_returns_201_and_saves_item`, `test_create_rejects_invalid_url`, `test_duplicate_website_returns_409`, `test_api_crud_cycle_and_dynamodb_latency` |
 
-**Request**
-
-```http
-GET /websites/{website_id}
-```
-
-**Success:** `200 OK`
-
-Returns the website ID and URL. The response includes `X-DynamoDB-Read-Time-Ms`, measuring the time around the DynamoDB read call in milliseconds.
-
-**Not found:** `404 Not Found`
-
-```json
-{
-  "error": "Website not found"
-}
-```
-
-## Update a website
-
-**Request**
-
-```http
-PUT /websites/{website_id}
-Content-Type: application/json
+```bash
+curl -i -X POST $API/websites -d '{"url": "https://www.python.org/"}'
 ```
 
 ```json
-{
-  "url": "https://updated-example.com"
-}
+{"website_id": "5f0c2b6e-8a51-4d0e-9c1a-2f3b7d9e1a44", "url": "https://www.python.org/"}
 ```
 
-**Success:** `200 OK`
+Because the crawler reads the table every 30 minutes, the new site is included from the following run onwards.
 
-Returns the updated website ID and URL.
+## 3. `GET /websites/{website_id}`
 
-Possible errors include `400 Bad Request` for invalid JSON, a missing URL or missing website ID, and `404 Not Found` if the website does not exist.
+| | |
+|---|---|
+| Body | none |
+| Success | `200` – returns the item |
+| Extra header | `X-DynamoDB-Read-Time-Ms` – duration of the `get_item` call |
+| DynamoDB call | `get_item` |
+| Fails with | `404` if no item has that ID |
+| Checked by | `test_get_website_returns_dynamodb_read_time_header`, `test_read_missing_website_returns_404` |
 
-## Delete a website
-
-**Request**
-
-```http
-DELETE /websites/{website_id}
+```bash
+curl -i $API/websites/2
 ```
 
-**Success:** `200 OK`
+```json
+{"website_id": "2", "url": "https://www.google.com/"}
+```
+
+## 4. `PUT /websites/{website_id}`
+
+| | |
+|---|---|
+| Body | `{"url": "<new address>"}` – `url` is required |
+| Success | `200` – returns the updated item (same `website_id`) |
+| DynamoDB calls | `scan` (duplicate check), `get_item` to confirm it exists, then `update_item` |
+| Fails with | `400` (bad JSON / no `url` / badly formed URL), `404` (unknown ID), `409` (another entry already has that URL) |
+| Checked by | `test_crud_lifecycle_with_dynamodb`, `test_update_rejects_invalid_url`, `test_update_to_existing_url_returns_409` |
+
+```bash
+curl -X PUT $API/websites/<website_id> -d '{"url": "https://docs.python.org/"}'
+```
+
+```json
+{"website_id": "<website_id>", "url": "https://docs.python.org/"}
+```
+
+## 5. `DELETE /websites/{website_id}`
+
+| | |
+|---|---|
+| Body | none |
+| Success | `200` – returns the item that was removed |
+| DynamoDB call | `delete_item` with `ReturnValues="ALL_OLD"` – if nothing comes back, the ID did not exist |
+| Fails with | `404` if no item has that ID |
+| Checked by | `test_crud_lifecycle_with_dynamodb`, `test_api_crud_cycle_and_dynamodb_latency` |
+
+```bash
+curl -X DELETE $API/websites/<website_id>
+```
 
 ```json
 {
   "message": "Website deleted",
-  "website": {
-    "website_id": "generated-uuid",
-    "url": "https://example.com"
-  }
+  "website": {"website_id": "<website_id>", "url": "https://docs.python.org/"}
 }
 ```
 
-**Not found:** `404 Not Found` if the website does not exist.
+---
 
-## Other responses
+## Status codes used
 
-Unsupported HTTP methods return `405 Method Not Allowed`.
+When something goes wrong, the body contains a single `error` field explaining the problem, for example `{"error": "Website not found"}`.
 
-JSON responses use the `Content-Type: application/json` header.
+| Code | Returned by | Meaning |
+|------|-------------|---------|
+| `200` | GET, PUT, DELETE | Done |
+| `201` | POST | New website stored |
+| `400` | POST, PUT, DELETE | `Invalid JSON`, `url is required`, `Invalid website URL` or `website_id is required` |
+| `404` | GET one, PUT, DELETE | `Website not found` |
+| `409` | POST, PUT | `Website URL already exists` |
+| `405` | anything else | `Method not allowed` |
 
-## Timing headers
+## Good to know
 
-| Header | Meaning |
-|---|---|
-| `X-DynamoDB-Write-Time-Ms` | Time around the DynamoDB write call |
-| `X-DynamoDB-Read-Time-Ms` | Time around the individual DynamoDB read call |
-
-The timings include AWS SDK and network overhead; they do not measure only DynamoDB internal processing time.
-
-## Technology
-
-- Amazon API Gateway
-- AWS Lambda (Python)
-- Amazon DynamoDB
-- AWS CDK
-
-## Notes
-
-The actual API Gateway invoke URL depends on the deployed environment. Check the API Gateway console or deployment outputs before making requests.
+- Each URL can appear only once: the CRUD Lambda scans the table first and answers `409` if the address is already stored.
+- Accepted addresses use the `http` or `https` scheme, have a host name containing at least one dot, and contain no whitespace anywhere.
+- Sites added here are crawled and get metrics, but only the sites in `lambda/targets.json` have their own CloudWatch alarms (see *Known limitations* in the README).
+- To try PUT or DELETE safely, first POST a test site and use the `website_id` it returns, so the three starting websites stay in the table.

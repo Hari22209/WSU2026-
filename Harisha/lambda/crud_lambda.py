@@ -1,3 +1,4 @@
+from urllib.parse import urlparse
 import json
 import os
 import uuid
@@ -51,6 +52,41 @@ def lambda_handler(event, context):
     )
 
 
+
+def is_valid_url(url):
+    if not isinstance(url, str):
+        return False
+    try:
+        parsed = urlparse(url)
+        return (
+            parsed.scheme in ("http", "https")
+            and bool(parsed.hostname)
+            and "." in parsed.hostname
+            and not any(c.isspace() for c in url)
+        )
+    except ValueError:
+        return False
+
+
+
+def website_url_exists(url, exclude_id=None):
+    result = table.scan()
+    while True:
+        for item in result.get("Items", []):
+            if (
+                item.get("url") == url
+                and item.get("website_id") != exclude_id
+            ):
+                return True
+
+        if "LastEvaluatedKey" not in result:
+            return False
+
+        result = table.scan(
+            ExclusiveStartKey=result["LastEvaluatedKey"]
+        )
+
+
 def create_website(event):
     try:
         body = json.loads(event.get("body") or "{}")
@@ -67,6 +103,15 @@ def create_website(event):
             400,
             {"error": "url is required"}
         )
+
+    if not is_valid_url(url):
+        return response(
+            400,
+            {"error": "Invalid website URL"}
+        )
+
+    if website_url_exists(url):
+        return response(409, {"error": "Website URL already exists"})
 
     website_id = str(uuid.uuid4())
 
@@ -136,6 +181,15 @@ def update_website(event, website_id):
             400,
             {"error": "url is required"}
         )
+
+    if not is_valid_url(url):
+        return response(
+            400,
+            {"error": "Invalid website URL"}
+        )
+
+    if website_url_exists(url, exclude_id=website_id):
+        return response(409, {"error": "Website URL already exists"})
 
     existing = table.get_item(
         Key={
