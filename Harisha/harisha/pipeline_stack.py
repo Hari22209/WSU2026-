@@ -23,6 +23,7 @@ class HarishaStage(Stage):
 
         self.function_name = stack.function_name_output
         self.api_url = stack.api_url_output
+        self.target_table = stack.target_table_output
 
 
 class PipelineStack(Stack):
@@ -46,7 +47,8 @@ class PipelineStack(Stack):
                 commands=[
                     "cd Harisha",
                     "python -m pip install -r requirements.txt",
-                    "python -m pytest -q tests/test_unit.py tests/test_crud.py",
+                    # unit + functional tests block the pipeline before deploy
+                    "python -m pytest -q tests/test_unit.py tests/test_crud.py tests/functional",
                     "npm install -g aws-cdk",
                     "cdk synth",
                     "cp -R cdk.out ../cdk.out",
@@ -65,12 +67,14 @@ class PipelineStack(Stack):
                         env_from_cfn_outputs={
                             "WEBHEALTH_FUNCTION_NAME": stage.function_name,
                             "API_URL": stage.api_url,
+                            "TARGET_TABLE_NAME": stage.target_table,
                         },
                         role_policy_statements=[
                             iam.PolicyStatement(
                                 actions=[
                                     "lambda:InvokeFunction",
                                     "cloudwatch:ListMetrics",
+                                    "dynamodb:GetItem",
                                 ],
                                 resources=["*"],
                             )
