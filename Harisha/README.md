@@ -202,7 +202,7 @@ All four notify SNS.
 
 ## CI/CD pipeline
 
-Defined in `harisha/pipeline_stack.py` using CDK Pipelines. Alpha, Beta, Gamma and Prod are independent: every stage gets its own DynamoDB tables, Lambda functions and API endpoint, so testing one never touches another.
+Defined in `harisha/pipeline_stack.py` using CDK Pipelines. `HarishaStage` creates a fresh `HarishaStack` for each of Alpha, Beta, Gamma and Prod, so test data written in Beta can never reach Prod.
 
 1. **Source** – pulls the code from GitHub (token stored in Secrets Manager as `github-token`).
 2. **Build** – installs dependencies, runs all **unit and functional tests** (a failure stops the pipeline), then runs `cdk synth`.
@@ -334,13 +334,13 @@ If a pipeline stage fails: open the failed action in CodePipeline and read the C
 - **`website_id` as the partition key:** each website has a stable ID, so its URL can be changed with `PUT` without creating a new item.
 - **Rollback on the crawler:** CodeDeploy watches the crawler's errors, run duration and memory, which are the operational metrics the crawler must keep healthy.
 - **Duplicate check in code:** the key is `website_id`, not the URL, so DynamoDB cannot reject a repeated address by itself. `website_url_exists` scans the table first and the API returns `409` (on `PUT` it skips the entry's own ID).
-- **A single handler for the API:** all five routes reach `crud_lambda.lambda_handler`, which picks the right function from the HTTP method. Keeping them together means input checks and error responses are written once.
+- **Routing by HTTP method:** `lambda_handler` reads `httpMethod` and whether `website_id` is in the path, then calls `create_website`, `get_websites`, `get_website`, `update_website` or `delete_website`.
 - **Separate test levels:** mocks for logic, moto before deployment, real AWS after deployment, and a quick smoke test in Alpha.
 
 ## Issues I fixed during deployment
 
 1. **CodeDeploy blocked on the Free plan.** The first Beta deployment failed with *"needs a subscription for the service (CodeDeploy)"*. I added the `ENABLE_CODEDEPLOY_ROLLBACK` switch so the stack deploys without the deployment group on this account.
-2. **Integration tests looked in the wrong region.** Three integration tests failed in Beta because `tests/conftest.py` forced the region to `us-east-1` while the stacks were in `ap-southeast-2`. I changed it to `os.environ.setdefault(...)`, so the pipeline's own region is used. After the fix, all stages passed.
+2. **Wrong AWS region in tests.** My stacks are in `ap-southeast-2`, but `tests/conftest.py` set `AWS_DEFAULT_REGION` to `us-east-1` for every test, so the real-AWS tests could not find my resources. Using `os.environ.setdefault(...)` keeps the region CodeBuild already provides.
 
 ## Known limitations
 

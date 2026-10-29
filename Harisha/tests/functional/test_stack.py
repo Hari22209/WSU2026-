@@ -103,13 +103,12 @@ def test_crawler_has_rollback_on_alarm():
     # the alias "live" always exists (rollback moves this alias between versions)
     template.has_resource_properties("AWS::Lambda::Alias", {"Name": "live"})
     if ENABLE_CODEDEPLOY_ROLLBACK:
-        template.has_resource_properties("AWS::CodeDeploy::DeploymentGroup", {
-            "AutoRollbackConfiguration": {
-                "Enabled": True,
-                "Events": Match.array_with(["DEPLOYMENT_STOP_ON_ALARM"]),
-            },
-            "AlarmConfiguration": {"Enabled": True, "Alarms": Match.any_value()},
-        })
+        groups = template.find_resources("AWS::CodeDeploy::DeploymentGroup")
+        assert len(groups) == 1
+        group = list(groups.values())[0]["Properties"]
+        assert "DEPLOYMENT_STOP_ON_ALARM" in group["AutoRollbackConfiguration"]["Events"]
+        # errors, duration and memory alarms
+        assert len(group["AlarmConfiguration"]["Alarms"]) == 3
     else:
         # CodeDeploy is switched off (AWS Free plan), so no deployment group
         template.resource_count_is("AWS::CodeDeploy::DeploymentGroup", 0)

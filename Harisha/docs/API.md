@@ -4,7 +4,7 @@ This document describes the HTTP interface of the WebHealth project. Users call 
 
 ## Finding the API address
 
-Alpha, Beta, Gamma and Prod are deployed separately, so every stage gets a different address. You can find it under **CloudFormation → `Prod-HarishaStack` → Outputs → `WebHealthApiUrl`**, or from the terminal:
+Every stage has its own address. Print the Prod one with this command (change `Prod` to `Alpha`, `Beta` or `Gamma` for the others):
 
 ```bash
 aws cloudformation describe-stacks --stack-name Prod-HarishaStack --region ap-southeast-2 \
@@ -17,8 +17,8 @@ Prod address used in the examples below:
 API=https://wnq06hjc72.execute-api.ap-southeast-2.amazonaws.com/prod
 ```
 
-- Open to anyone: there is no login or API key.
-- Send JSON in, get JSON back.
+- Public: anyone with the address can call it.
+- Bodies are JSON in both directions.
 - `website_id` (the DynamoDB partition key) picks out one website.
 
 ## Quick reference
