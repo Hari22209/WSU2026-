@@ -68,7 +68,7 @@ How the application works, step by step:
 ## AWS services used
 
 | Service | Purpose in this project |
-|---|---|
+
 | AWS Lambda | Runs the monitoring, CRUD and alarm-logging code (Python 3.11) |
 | Amazon DynamoDB | Stores the target list and the alarm history |
 | Amazon API Gateway | Public REST API for CRUD on the target list |
@@ -88,7 +88,7 @@ The project uses **two DynamoDB tables**, both created in `harisha/harisha_stack
 ### TargetWebsiteTable – the target list
 
 | Attribute | Type | Description |
-|---|---|---|
+
 | `website_id` | String (**partition key**) | Unique ID of the website |
 | `url` | String | Website address to monitor |
 
@@ -99,7 +99,7 @@ The project uses **two DynamoDB tables**, both created in `harisha/harisha_stack
 ### AlarmInformationTable – the alarm history
 
 | Attribute | Type | Description |
-|---|---|---|
+
 | `alarm_id` | String (**partition key**) | Unique ID (UUID) for each notification |
 | `timestamp` | String | Time SNS delivered the alarm |
 | `alarm_name` | String | Name of the CloudWatch alarm |
@@ -113,7 +113,7 @@ The project uses **two DynamoDB tables**, both created in `harisha/harisha_stack
 ### Permissions (least privilege)
 
 | Lambda | DynamoDB permission |
-|---|---|
+
 | Monitoring Lambda | `grant_read_data` on TargetWebsiteTable |
 | CRUD Lambda | `grant_read_write_data` on TargetWebsiteTable |
 | Alarm logger Lambda | `grant_write_data` on AlarmInformationTable |
@@ -123,7 +123,7 @@ The project uses **two DynamoDB tables**, both created in `harisha/harisha_stack
 Base URL: the `WebHealthApiUrl` output of the stack. Full details are in [`docs/API.md`](docs/API.md).
 
 | Method | Endpoint | Purpose | Success |
-|---|---|---|---|
+
 | POST | `/websites` | Add a website (`{"url": "..."}`) | `201 Created` |
 | GET | `/websites` | List all websites | `200 OK` |
 | GET | `/websites/{website_id}` | Read one website | `200 OK` |
@@ -174,14 +174,14 @@ Example result:
 ### Website metrics (namespace `WebHealth`, dimension `Website`)
 
 | Metric | Unit | Meaning |
-|---|---|---|
+
 | `Availability` | Count | `1` when the website responds, `0` when it does not |
 | `Latency` | Seconds | Time taken for the website to respond |
 
 ### Website alarms
 
 | Alarm | Condition | Action |
-|---|---|---|
+
 | `AvailabilityAlarm0–2` | Availability below `1` in a 30-minute period | SNS |
 | `LatencyAlarm0–2` | Latency above `2` seconds in a 30-minute period | SNS |
 
@@ -203,7 +203,7 @@ Every alarm publishes to one SNS topic, which has two kinds of subscribers:
 ### Crawler health alarms
 
 | Alarm | Metric | Condition |
-|---|---|---|
+
 | `CrawlerErrorsAlarm` | Lambda `Errors` | 1 or more errors in 5 minutes |
 | `CrawlerDurationAlarm` | Lambda `Duration` (time to process a run) | Above 24 seconds (80% of the 30-second timeout) |
 | `CrawlerMemoryAlarm` | Lambda Insights `memory_utilization` | Above 80% |
@@ -237,7 +237,7 @@ A failed test in any stage stops the next stage from deploying.
 ## Testing
 
 | Level | File | What it tests | Count |
-|---|---|---|---|
+
 | Unit | `tests/test_unit.py` | Monitoring Lambda logic: UP/DOWN status, status codes, response time, metrics published (CloudWatch and table mocked) | 12 |
 | Unit | `tests/test_crud.py` | CRUD logic: create returns 201 and saves the item, missing or badly formed URL returns 400 without touching DynamoDB, read/write time headers (table mocked) | 6 |
 | Functional | `tests/test_crud.py` | Against a DynamoDB table (moto): full CRUD lifecycle with 404 for missing items, and 409 when a POST or PUT would duplicate an existing URL | 3 |
@@ -303,7 +303,7 @@ python -m pytest -q tests/integration
 ## Project structure
 
 | File or folder | Purpose |
-|---|---|
+
 | `app.py` | CDK entry point; creates the pipeline stack |
 | `harisha/harisha_stack.py` | All application resources: DynamoDB, Lambdas, API Gateway, CloudWatch, SNS, CodeDeploy |
 | `harisha/pipeline_stack.py` | CI/CD pipeline with Alpha, Beta, Gamma and Prod stages |
