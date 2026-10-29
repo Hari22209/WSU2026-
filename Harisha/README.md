@@ -33,6 +33,25 @@ The application is deployed by a CI/CD pipeline (AWS CodePipeline) through **Alp
 
 ## Architecture
 
+```mermaid
+flowchart LR
+    user([User / curl]) -->|HTTPS| api[API Gateway<br/>/websites]
+    api --> crud[CRUD Lambda<br/>crud_lambda.py]
+    crud <-->|put, get, update,<br/>delete, scan| targets[(DynamoDB<br/>TargetWebsiteTable)]
+    seed[targets.json<br/>batchWriteItem on deploy] --> targets
+    rule[EventBridge<br/>every 30 min] --> crawler[Crawler Lambda<br/>alias live]
+    targets -->|scan| crawler
+    crawler -->|HTTP check| sites((Websites))
+    crawler -->|Availability, Latency| cw[CloudWatch<br/>metrics]
+    cw --> dash[Dashboard]
+    cw --> alarms[10 alarms<br/>per stage]
+    alarms --> sns[SNS topic]
+    sns --> email[Student email]
+    sns --> logger[Alarm logger Lambda<br/>database_logger.py]
+    logger --> history[(DynamoDB<br/>AlarmInformationTable)]
+```
+![alt text](image.png)
+
 How the application works, step by step:
 
 1. The user calls the **API Gateway** endpoint `/websites` to add, view, update or delete websites.
