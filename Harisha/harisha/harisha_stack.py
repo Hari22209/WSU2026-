@@ -26,6 +26,11 @@ ALERT_EMAILS = [
     "22099290@westernsydney.edu.au",
 ]
 
+# Automatic rollback uses AWS CodeDeploy. CodeDeploy is not available on
+# the AWS Free plan, so it is switched off for this account. Set to True on
+# an account with the paid plan to turn rollback on.
+ENABLE_CODEDEPLOY_ROLLBACK = False
+
 # The target list. It is placed in the DynamoDB table when the stack is
 # deployed, and the same list is used to create the alarms and dashboard.
 TARGET_WEBSITES = [
@@ -120,8 +125,8 @@ class HarishaStack(Stack):
             )
         )
 
-        # Alias "live". The schedule calls the alias, and CodeDeploy
-        # moves the alias between versions -> this enables rollback.
+        # Alias "live". The schedule calls the alias, and
+        # CodeDeploy moves the alias between versions -> this enables rollback.
         webhealth_alias = lambda_.Alias(
             self,
             "WebHealthLiveAlias",
@@ -246,7 +251,7 @@ class HarishaStack(Stack):
 
         sns_action = cloudwatch_actions.SnsAction(alarm_topic)
 
-        # CloudWatch metrics and alarms (same websites as the target list)
+        # CloudWatch metrics and alarms
         websites = [site["url"] for site in TARGET_WEBSITES]
 
         availability_metrics = []
@@ -368,18 +373,19 @@ class HarishaStack(Stack):
         # A new version gets 10% of traffic for 5 minutes. If the errors,
         # duration or memory alarm goes off, CodeDeploy moves the "live"
         # alias back to the last working version.
-        codedeploy.LambdaDeploymentGroup(
-            self,
-            "CrawlerDeploymentGroup",
-            alias=webhealth_alias,
-            deployment_config=codedeploy.LambdaDeploymentConfig.CANARY_10_PERCENT_5_MINUTES,
-            alarms=[errors_alarm, duration_alarm, memory_alarm],
-            auto_rollback=codedeploy.AutoRollbackConfig(
-                failed_deployment=True,
-                stopped_deployment=True,
-                deployment_in_alarm=True,
-            ),
-        )
+        if ENABLE_CODEDEPLOY_ROLLBACK:
+            codedeploy.LambdaDeploymentGroup(
+                self,
+                "CrawlerDeploymentGroup",
+                alias=webhealth_alias,
+                deployment_config=codedeploy.LambdaDeploymentConfig.CANARY_10_PERCENT_5_MINUTES,
+                alarms=[errors_alarm, duration_alarm, memory_alarm],
+                auto_rollback=codedeploy.AutoRollbackConfig(
+                    failed_deployment=True,
+                    stopped_deployment=True,
+                    deployment_in_alarm=True,
+                ),
+            )
 
         # CloudWatch Dashboard
         dashboard = cloudwatch.Dashboard(

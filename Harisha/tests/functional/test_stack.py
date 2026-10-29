@@ -1,7 +1,7 @@
 import aws_cdk as cdk
 from aws_cdk.assertions import Match, Template
 
-from harisha.harisha_stack import HarishaStack, ALERT_EMAILS, TARGET_WEBSITES
+from harisha.harisha_stack import HarishaStack, ALERT_EMAILS, TARGET_WEBSITES, ENABLE_CODEDEPLOY_ROLLBACK
 
 
 def get_template():
@@ -100,14 +100,19 @@ def test_email_subscriptions_match_alert_emails():
 
 def test_crawler_has_rollback_on_alarm():
     template = get_template()
+    # the alias "live" always exists (rollback moves this alias between versions)
     template.has_resource_properties("AWS::Lambda::Alias", {"Name": "live"})
-    template.has_resource_properties("AWS::CodeDeploy::DeploymentGroup", {
-        "AutoRollbackConfiguration": {
-            "Enabled": True,
-            "Events": Match.array_with(["DEPLOYMENT_STOP_ON_ALARM"]),
-        },
-        "AlarmConfiguration": {"Enabled": True, "Alarms": Match.any_value()},
-    })
+    if ENABLE_CODEDEPLOY_ROLLBACK:
+        template.has_resource_properties("AWS::CodeDeploy::DeploymentGroup", {
+            "AutoRollbackConfiguration": {
+                "Enabled": True,
+                "Events": Match.array_with(["DEPLOYMENT_STOP_ON_ALARM"]),
+            },
+            "AlarmConfiguration": {"Enabled": True, "Alarms": Match.any_value()},
+        })
+    else:
+        # CodeDeploy is switched off (AWS Free plan), so no deployment group
+        template.resource_count_is("AWS::CodeDeploy::DeploymentGroup", 0)
 
 
 def test_crawler_memory_alarm_exists():
