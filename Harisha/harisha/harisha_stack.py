@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 from aws_cdk import (
     Stack,
@@ -31,13 +32,12 @@ ALERT_EMAILS = [
 # an account with the paid plan to turn rollback on.
 ENABLE_CODEDEPLOY_ROLLBACK = False
 
-# The target list. It is placed in the DynamoDB table when the stack is
-# deployed, and the same list is used to create the alarms and dashboard.
-TARGET_WEBSITES = [
-    {"website_id": "1", "url": "https://www.westernsydney.edu.au/"},
-    {"website_id": "2", "url": "https://www.google.com/"},
-    {"website_id": "3", "url": "https://www.amazon.com/"},
-]
+# The target list is kept in lambda/targets.json. It is placed in the
+# DynamoDB table when the stack is deployed, and the same list is used to
+# create the alarms and dashboard. To change the starting websites, edit the
+# JSON file - no Python change needed.
+TARGETS_FILE = Path(__file__).resolve().parents[1] / "lambda" / "targets.json"
+TARGET_WEBSITES = json.loads(TARGETS_FILE.read_text())
 
 
 class HarishaStack(Stack):

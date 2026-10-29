@@ -56,34 +56,57 @@ class PipelineStack(Stack):
             ),
         )
 
-        for name in ["Beta", "Gamma", "Prod"]:
+        def test_step(stage, step_name, test_folder):
+            """A CodeBuild step that runs one test folder against a deployed stage.
+            If any test fails, the pipeline stops and the next stage never deploys."""
+            return pipelines.CodeBuildStep(
+                step_name,
+                input=source,
+                env_from_cfn_outputs={
+                    "WEBHEALTH_FUNCTION_NAME": stage.function_name,
+                    "API_URL": stage.api_url,
+                    "TARGET_TABLE_NAME": stage.target_table,
+                },
+                role_policy_statements=[
+                    iam.PolicyStatement(
+                        actions=[
+                            "lambda:InvokeFunction",
+                            "cloudwatch:ListMetrics",
+                            "dynamodb:GetItem",
+                        ],
+                        resources=["*"],
+                    )
+                ],
+                commands=[
+                    "cd Harisha",
+                    "python -m pip install -r requirements.txt",
+                    f"python -m pytest {test_folder} -q",
+                ],
+            )
+
+        # Alpha: first deployment. A quick smoke test checks the API answers
+        # and the target list was placed in DynamoDB.
+        alpha = HarishaStage(self, "Alpha")
+        pipeline.add_stage(
+            alpha,
+            post=[test_step(alpha, "AlphaSmokeTests", "tests/smoke")],
+        )
+
+        # Beta and Gamma: full integration tests against the real AWS resources.
+        for name in ["Beta", "Gamma"]:
             stage = HarishaStage(self, name)
             pipeline.add_stage(
                 stage,
-                post=[
-                    pipelines.CodeBuildStep(
-                        f"{name}IntegrationTests",
-                        input=source,
-                        env_from_cfn_outputs={
-                            "WEBHEALTH_FUNCTION_NAME": stage.function_name,
-                            "API_URL": stage.api_url,
-                            "TARGET_TABLE_NAME": stage.target_table,
-                        },
-                        role_policy_statements=[
-                            iam.PolicyStatement(
-                                actions=[
-                                    "lambda:InvokeFunction",
-                                    "cloudwatch:ListMetrics",
-                                    "dynamodb:GetItem",
-                                ],
-                                resources=["*"],
-                            )
-                        ],
-                        commands=[
-                            "cd Harisha",
-                            "python -m pip install -r requirements.txt",
-                            "python -m pytest tests/integration -q",
-                        ],
-                    )
-                ],
+                post=[test_step(stage, f"{name}IntegrationTests", "tests/integration")],
             )
+
+        # Prod: a person must approve the release before production is changed.
+        prod = HarishaStage(self, "Prod")
+        pipeline.add_stage(
+            prod,
+            pre=[pipelines.ManualApprovalStep(
+                "ReleaseToProduction",
+                comment="Alpha, Beta and Gamma passed. Approve to deploy to Prod.",
+            )],
+            post=[test_step(prod, "ProdIntegrationTests", "tests/integration")],
+        )
