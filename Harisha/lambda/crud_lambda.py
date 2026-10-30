@@ -203,6 +203,7 @@ def update_website(event, website_id):
             {"error": "Website not found"}
         )
 
+    start_time = time.perf_counter()
     result = table.update_item(
         Key={
             "website_id": website_id
@@ -217,9 +218,12 @@ def update_website(event, website_id):
         ReturnValues="ALL_NEW"
     )
 
+    write_time_ms = (time.perf_counter() - start_time) * 1000
+
     return response(
         200,
-        result["Attributes"]
+        result["Attributes"],
+        {"X-DynamoDB-Write-Time-Ms": str(round(write_time_ms, 3))}
     )
 
 
@@ -230,12 +234,14 @@ def delete_website(website_id):
             {"error": "website_id is required"}
         )
 
+    start_time = time.perf_counter()
     result = table.delete_item(
         Key={
             "website_id": website_id
         },
         ReturnValues="ALL_OLD"
     )
+    write_time_ms = (time.perf_counter() - start_time) * 1000
 
     if "Attributes" not in result:
         return response(
@@ -248,5 +254,6 @@ def delete_website(website_id):
         {
             "message": "Website deleted",
             "website": result["Attributes"]
-        }
+        },
+        {"X-DynamoDB-Write-Time-Ms": str(round(write_time_ms, 3))}
     )

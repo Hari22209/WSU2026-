@@ -93,6 +93,7 @@ curl -i $API/websites/2
 - **Body:** `{"url": "<new address>"}` – `url` is required
 - **Success:** `200` – returns the updated item (same `website_id`)
 - **DynamoDB calls:** `scan` (duplicate check), `get_item` to confirm it exists, then `update_item`
+- **Extra header:** `X-DynamoDB-Write-Time-Ms` – duration of the `update_item` call
 - **Fails with:** `400` (bad JSON / no `url` / badly formed URL), `404` (unknown ID), `409` (another entry already has that URL)
 - **Checked by:** `test_crud_lifecycle_with_dynamodb`, `test_update_rejects_invalid_url`, `test_update_to_existing_url_returns_409`
 
@@ -108,6 +109,7 @@ curl -X PUT $API/websites/<website_id> -d '{"url": "https://docs.python.org/"}'
 
 - **Body:** none
 - **Success:** `200` – returns the item that was removed
+- **Extra header:** `X-DynamoDB-Write-Time-Ms` – duration of the `delete_item` call
 - **DynamoDB call:** `delete_item` with `ReturnValues="ALL_OLD"` – if nothing comes back, the ID did not exist
 - **Fails with:** `404` if no item has that ID
 - **Checked by:** `test_crud_lifecycle_with_dynamodb`, `test_api_crud_cycle_and_dynamodb_latency`

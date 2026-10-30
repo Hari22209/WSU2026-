@@ -113,12 +113,14 @@ def test_crud_lifecycle_with_dynamodb(dynamodb_table):
     # CREATE -> really stored in the table
     created = h(event("POST", {"url": PYTHON}), None)
     assert created["statusCode"] == 201
+    assert float(created["headers"]["X-DynamoDB-Write-Time-Ms"]) >= 0
     wid = json.loads(created["body"])["website_id"]
     assert dynamodb_table.get_item(Key={"website_id": wid})["Item"]["url"] == PYTHON
 
     # READ one and READ all
     got = h(event("GET", website_id=wid), None)
     assert got["statusCode"] == 200
+    assert float(got["headers"]["X-DynamoDB-Read-Time-Ms"]) >= 0
     assert json.loads(got["body"])["url"] == PYTHON
     listing = json.loads(h(event("GET"), None)["body"])
     assert len(listing["websites"]) == 1
@@ -126,10 +128,13 @@ def test_crud_lifecycle_with_dynamodb(dynamodb_table):
     # UPDATE -> table has the new url
     updated = h(event("PUT", {"url": PYTHON_DOCS}, website_id=wid), None)
     assert updated["statusCode"] == 200
+    assert float(updated["headers"]["X-DynamoDB-Write-Time-Ms"]) >= 0
     assert dynamodb_table.get_item(Key={"website_id": wid})["Item"]["url"] == PYTHON_DOCS
 
     # DELETE -> gone from the table
-    assert h(event("DELETE", website_id=wid), None)["statusCode"] == 200
+    deleted = h(event("DELETE", website_id=wid), None)
+    assert deleted["statusCode"] == 200
+    assert float(deleted["headers"]["X-DynamoDB-Write-Time-Ms"]) >= 0
     assert "Item" not in dynamodb_table.get_item(Key={"website_id": wid})
     assert h(event("GET", website_id=wid), None)["statusCode"] == 404
 
