@@ -52,7 +52,6 @@ flowchart LR
     sns --> logger[Alarm logger Lambda<br/>database_logger.py]
     logger --> history[(DynamoDB<br/>AlarmInformationTable)]
 ```
-![alt text](image.png)
 
 How the application works, step by step:
 
@@ -71,7 +70,7 @@ How the application works, step by step:
 
 | Service | Purpose in this project |
 
-| AWS Lambda | Runs the monitoring, CRUD and alarm-logging code (Python 3.11) |
+| AWS Lambda | Runs the monitoring, CRUD, alarm-logging and alarm sync code (Python 3.11) |
 | Amazon DynamoDB | Stores the target list and the alarm history; the target table's stream triggers the alarm sync Lambda |
 | Amazon API Gateway | Public REST API for CRUD on the target list |
 | Amazon EventBridge | Runs the monitoring Lambda every 30 minutes |
@@ -264,7 +263,7 @@ A failed test in any stage stops the next stage from deploying.
 
 ```bash
 # unit + functional (no AWS account needed)
-python -m pytest -q tests/test_unit.py tests/test_crud.py tests/functional
+python -m pytest -q tests/test_unit.py tests/test_crud.py tests/test_alarm_sync.py tests/functional
 
 # integration (against a deployed stage)
 export API_URL=<WebHealthApiUrl>
@@ -324,7 +323,7 @@ python -m pytest -q tests/integration
 ```bash
 source .venv/bin/activate
 pip install -r requirements.txt
-python -m pytest -q tests/test_unit.py tests/test_crud.py tests/functional
+python -m pytest -q tests/test_unit.py tests/test_crud.py tests/test_alarm_sync.py tests/functional
 npx cdk synth
 ```
 

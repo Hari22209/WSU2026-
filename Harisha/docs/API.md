@@ -142,5 +142,5 @@ When something goes wrong, the body contains a single `error` field explaining t
 
 - Each URL can appear only once: the CRUD Lambda scans the table first and answers `409` if the address is already stored.
 - Accepted addresses use the `http` or `https` scheme, have a host name containing at least one dot, and contain no whitespace anywhere.
-- Sites added here are crawled and get metrics, but only the sites in `lambda/targets.json` have their own CloudWatch alarms (see *Known limitations* in the README).
+- Sites added here are crawled on the next run, and the alarm sync Lambda gives each one its own availability and latency alarms. Only the dashboard graphs still come from `lambda/targets.json` (see *Known limitations* in the README).
 - To try PUT or DELETE safely, first POST a test site and use the `website_id` it returns, so the three starting websites stay in the table.
