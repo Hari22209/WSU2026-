@@ -48,7 +48,7 @@ class PipelineStack(Stack):
                     "cd Harisha",
                     "python -m pip install -r requirements.txt",
                     # unit + functional tests block the pipeline before deploy
-                    "python -m pytest -q tests/test_unit.py tests/test_crud.py tests/functional",
+                    "python -m pytest -q tests/test_unit.py tests/test_crud.py tests/test_alarm_sync.py tests/functional",
                     "npm install -g aws-cdk",
                     "cdk synth",
                     "cp -R cdk.out ../cdk.out",

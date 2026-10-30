@@ -16,6 +16,7 @@ from aws_cdk import (
     aws_sns_subscriptions as subscriptions,
     aws_dynamodb as dynamodb,
     aws_apigateway as apigateway,
+    aws_lambda_event_sources as event_sources,
     custom_resources as cr,
 )
 from constructs import Construct
@@ -64,6 +65,8 @@ class HarishaStack(Stack):
             ),
             billing_mode=dynamodb.BillingMode.PAY_PER_REQUEST,
             removal_policy=RemovalPolicy.DESTROY,
+            # every add / change / delete is sent to the alarm sync Lambda
+            stream=dynamodb.StreamViewType.NEW_AND_OLD_IMAGES,
         )
 
         # Place the target list in DynamoDB when the stack is first deployed.
@@ -250,6 +253,37 @@ class HarishaStack(Stack):
         )
 
         sns_action = cloudwatch_actions.SnsAction(alarm_topic)
+
+        # Alarm sync Lambda: websites added through the API get their own
+        # alarms. DynamoDB Streams calls it after every add, change or delete
+        # in the website table, so the CRUD Lambda itself is not changed.
+        alarm_sync_lambda = lambda_.Function(
+            self,
+            "AlarmSyncLambda",
+            runtime=lambda_.Runtime.PYTHON_3_11,
+            handler="alarm_sync.lambda_handler",
+            code=lambda_code,
+            timeout=Duration.seconds(30),
+            environment={
+                "TOPIC_ARN": alarm_topic.topic_arn,
+                "ALARM_PREFIX": self.stack_name,
+            },
+        )
+        alarm_sync_lambda.add_event_source(
+            event_sources.DynamoEventSource(
+                target_table,
+                starting_position=lambda_.StartingPosition.LATEST,
+                batch_size=10,
+                retry_attempts=2,
+            )
+        )
+        # may only create and delete alarms whose names start with this stack's name
+        alarm_sync_lambda.add_to_role_policy(
+            iam.PolicyStatement(
+                actions=["cloudwatch:PutMetricAlarm", "cloudwatch:DeleteAlarms"],
+                resources=[f"arn:aws:cloudwatch:{self.region}:{self.account}:alarm:{self.stack_name}-site-*"],
+            )
+        )
 
         # CloudWatch metrics and alarms
         websites = [site["url"] for site in TARGET_WEBSITES]

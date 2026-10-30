@@ -16,13 +16,24 @@ def _template():
     )
 
 
-def test_three_python_lambdas():
-    # crawler, CRUD and alarm logger (the seeding helper is Node.js, made by CDK)
+def test_four_python_lambdas():
+    # crawler, CRUD, alarm logger and alarm sync (the seeding helper is Node.js, made by CDK)
     template = get_template()
     python = template.find_resources(
         "AWS::Lambda::Function", {"Properties": {"Runtime": "python3.11"}}
     )
-    assert len(python) == 3
+    assert len(python) == 4
+
+
+def test_website_table_streams_changes_to_alarm_sync():
+    template = get_template()
+    template.has_resource_properties("AWS::DynamoDB::Table", {
+        "StreamSpecification": {"StreamViewType": "NEW_AND_OLD_IMAGES"},
+    })
+    template.resource_count_is("AWS::Lambda::EventSourceMapping", 1)
+    template.has_resource_properties("AWS::Lambda::Function", {
+        "Handler": "alarm_sync.lambda_handler",
+    })
 
 
 def test_two_dynamodb_tables():

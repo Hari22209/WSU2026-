@@ -44,7 +44,9 @@ flowchart LR
     crawler -->|HTTP check| sites((Websites))
     crawler -->|Availability, Latency| cw[CloudWatch<br/>metrics]
     cw --> dash[Dashboard]
-    cw --> alarms[10 alarms<br/>per stage]
+    cw --> alarms[CloudWatch<br/>alarms]
+    targets -->|DynamoDB Stream| sync[Alarm sync Lambda<br/>alarm_sync.py]
+    sync -->|create / delete| alarms
     alarms --> sns[SNS topic]
     sns --> email[Student email]
     sns --> logger[Alarm logger Lambda<br/>database_logger.py]
@@ -61,7 +63,7 @@ How the application works, step by step:
 5. It publishes **Availability** and **Latency** metrics to **CloudWatch**.
 6. **CloudWatch alarms** watch these metrics, and the **CloudWatch dashboard** shows them as graphs.
 7. When an alarm fires, it sends a message to **SNS**.
-8. SNS **emails** the team and triggers the **alarm logger Lambda**, which saves the alarm in **DynamoDB (AlarmInformationTable)**.
+8. SNS **emails** the team and triggers the **alarm logger Lambda**, which saves the alarm in **DynamoDB (AlarmInformationTable)**. When a website is added, changed or removed through the API, the table's **DynamoDB Stream** runs the **alarm sync Lambda**, which creates, moves or deletes that website's two alarms.
 9. If the WebHealth Lambda becomes unhealthy after a new deployment, **CodeDeploy** rolls it back to the last working version.
 10. Code changes pushed to **GitHub** go through **CodePipeline**: Source, Build (unit and functional tests), UpdatePipeline, Assets, then **Alpha** (smoke tests), **Beta** and **Gamma** (integration tests), a manual approval, and **Prod**.
 
@@ -70,7 +72,7 @@ How the application works, step by step:
 | Service | Purpose in this project |
 
 | AWS Lambda | Runs the monitoring, CRUD and alarm-logging code (Python 3.11) |
-| Amazon DynamoDB | Stores the target list and the alarm history |
+| Amazon DynamoDB | Stores the target list and the alarm history; the target table's stream triggers the alarm sync Lambda |
 | Amazon API Gateway | Public REST API for CRUD on the target list |
 | Amazon EventBridge | Runs the monitoring Lambda every 30 minutes |
 | Amazon CloudWatch | Metrics, alarms, dashboard and Lambda Insights (memory) |
@@ -117,6 +119,7 @@ The project uses **two DynamoDB tables**, both created in `harisha/harisha_stack
 | Monitoring Lambda | `grant_read_data` on TargetWebsiteTable |
 | CRUD Lambda | `grant_read_write_data` on TargetWebsiteTable |
 | Alarm logger Lambda | `grant_write_data` on AlarmInformationTable |
+| Alarm sync Lambda | reads the TargetWebsiteTable stream; may only create/delete alarms named `<stack>-site-*` |
 
 ## Website management API (CRUD)
 
@@ -242,12 +245,13 @@ A failed test in any stage stops the next stage from deploying.
 | Unit | `tests/test_crud.py` | CRUD logic: create returns 201 and saves the item, missing or badly formed URL returns 400 without touching DynamoDB, read/write time headers (table mocked) | 6 |
 | Functional | `tests/test_crud.py` | Against a DynamoDB table (moto): full CRUD lifecycle with 404 for missing items, and 409 when a POST or PUT would duplicate an existing URL | 3 |
 | Functional | `tests/functional/test_dynamodb.py` | Monitoring Lambda reads the target list from DynamoDB; alarm logger saves alarms to DynamoDB (moto) | 2 |
-| Functional | `tests/functional/test_stack.py` | The CloudFormation template: 3 Lambdas, 2 tables, seeding, schedule, SNS and emails, 10 alarms, dashboard, API routes, rollback, memory alarm | 15 |
+| Functional | `tests/functional/test_stack.py` | The CloudFormation template: 4 Lambdas, 2 tables, table stream, seeding, schedule, SNS and emails, 10 alarms, dashboard, API routes, rollback, memory alarm | 16 |
+| Unit | `tests/test_alarm_sync.py` | Alarm sync Lambda: new website gets 2 alarms, removed website's alarms deleted, changed URL moves the alarms, starting websites skipped (CloudWatch mocked) | 5 |
 | Integration | `tests/integration/test_crud_integration.py` | Deployed API: CRUD cycle checked **directly in the real DynamoDB table** with read time under 1 s; 400 and 404 errors | 3 |
 | Integration | `tests/integration/test_integration.py` | Deployed monitoring Lambda checks all websites; metrics reach CloudWatch | 2 |
 | Smoke | `tests/smoke/test_smoke.py` | Alpha stage: the deployed API answers, and every website in `targets.json` is in DynamoDB | 2 |
 
-**Total: 45 tests** (18 unit, 20 functional, 5 integration, 2 smoke).
+**Total: 51 tests** (23 unit, 21 functional, 5 integration, 2 smoke).
 
 ### Why three levels of DynamoDB testing?
 
@@ -310,6 +314,7 @@ python -m pytest -q tests/integration
 | `lambda/lambda_function.py` | Monitoring (web crawler) Lambda |
 | `lambda/crud_lambda.py` | CRUD API Lambda |
 | `lambda/database_logger.py` | Alarm logger Lambda |
+| `lambda/alarm_sync.py` | Alarm sync Lambda (alarms for websites added through the API) |
 | `lambda/targets.json` | Starting target list, seeded into DynamoDB on deploy |
 | `tests/` | Unit, functional, integration and smoke tests |
 | `docs/API.md` | API documentation |
@@ -354,6 +359,7 @@ If a pipeline stage fails: open the failed action in CodePipeline and read the C
 - **Rollback on the crawler:** CodeDeploy watches the crawler's errors, run duration and memory, which are the operational metrics the crawler must keep healthy.
 - **Duplicate check in code:** the key is `website_id`, not the URL, so DynamoDB cannot reject a repeated address by itself. `website_url_exists` scans the table first and the API returns `409` (on `PUT` it skips the entry's own ID).
 - **Routing by HTTP method:** `lambda_handler` reads `httpMethod` and whether `website_id` is in the path, then calls `create_website`, `get_websites`, `get_website`, `update_website` or `delete_website`.
+- **Alarms for API-added websites through DynamoDB Streams:** the CRUD Lambda only talks to DynamoDB. The table's stream sends each change to a separate alarm sync Lambda, so alarm handling is kept out of the API code, and a failed alarm call can never make an API request fail.
 - **Separate test levels:** mocks for logic, moto before deployment, real AWS after deployment, and a quick smoke test in Alpha.
 
 ## Issues I fixed during deployment
@@ -364,7 +370,7 @@ If a pipeline stage fails: open the failed action in CodePipeline and read the C
 ## Known limitations
 
 - The CRUD API is public and has no authentication.
-- Alarms and dashboard graphs are created for the websites in `lambda/targets.json`. Websites added later through the API are monitored and get metrics, but do not get their own alarm until they are added to `targets.json` and redeployed.
+- Websites added through the API get their own alarms from the alarm sync Lambda, but the dashboard graphs are still built from `lambda/targets.json`.
 - `scan` reads the whole table. This is fine for a small target list; a very large list would need a different design.
 - Integration tests need a deployed stage and AWS credentials.
 
@@ -377,4 +383,13 @@ for stage in Prod Gamma Beta Alpha; do
   aws cloudformation delete-stack --stack-name $stage-HarishaStack --region ap-southeast-2
 done
 npx cdk destroy PipelineStack
+```
+
+Alarms made by the alarm sync Lambda are not part of the stacks, so delete them as well:
+
+```bash
+for stage in Prod Gamma Beta Alpha; do
+  names=$(aws cloudwatch describe-alarms --region ap-southeast-2 --alarm-name-prefix "$stage-HarishaStack-site-" --query "MetricAlarms[].AlarmName" --output text)
+  [ -n "$names" ] && aws cloudwatch delete-alarms --region ap-southeast-2 --alarm-names $names
+done
 ```
